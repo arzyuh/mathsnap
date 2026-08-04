@@ -11,6 +11,7 @@ FastAPI backend - го поврзува целиот pipeline:
 """
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 
@@ -22,6 +23,9 @@ from pydantic import BaseModel
 
 from . import graphing, ocr, solver
 from .expression_parser import ParseError, parse
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
+ocr_logger = logging.getLogger("photomathj.ocr")
 
 app = FastAPI(title="PhotoMathJ API", version="0.1.0")
 
@@ -101,6 +105,8 @@ async def ocr_endpoint(file: UploadFile = File(...)) -> OcrResponse:
         raw_text = ocr.extract_text(image_bytes)
     except Exception as exc:  # OpenCV/Tesseract runtime грешки
         raise HTTPException(status_code=500, detail=f"OCR грешка: {exc}") from exc
+
+    ocr_logger.info("OCR raw_text=%r", raw_text)
 
     if not raw_text:
         raise HTTPException(
