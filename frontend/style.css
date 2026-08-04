@@ -68,6 +68,69 @@ main { max-width: 480px; margin: 0 auto; padding: 16px; }
   box-shadow: 0 2px 10px rgba(0,0,0,0.06);
 }
 
+.scan-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.mode-btn {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.mode-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  font-weight: 600;
+}
+
+.video-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#camera-video {
+  width: 100%;
+  max-height: 400px;
+  display: block;
+}
+.live-badge {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.65);
+  color: #fff;
+  font-size: 0.95rem;
+  font-family: "Cascadia Code", monospace;
+  text-align: center;
+  overflow-wrap: break-word;
+}
+.live-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.live-controls .primary-btn,
+.live-controls .secondary-btn {
+  margin-top: 0;
+  flex: 1;
+}
+
 .file-drop {
   display: flex;
   align-items: center;

@@ -57,6 +57,20 @@ uvicorn app.main:app --reload --port 8000
 Отвори `http://127.0.0.1:8000` во browser - frontend-от се сервира
 директно преку истиот FastAPI сервер.
 
+### Live камера скенирање
+
+Табот "🎥 Live камера" користи `getUserMedia` за да пушти видео од
+камерата, и на секои ~1.2s зема frame (canvas snapshot) кој го праќа
+до `/api/ocr`. Штом истиот текст се препознае 2 пати по ред, автоматски
+се решава (или притисни "📸 Сними рачно" за веднаш).
+
+**Важно за `getUserMedia`**: browser-от бара secure context. Тоа значи:
+- работи автоматски на `http://localhost` / `http://127.0.0.1`
+- НЕ работи на обичен `http://<LAN-IP>:8000` (пр. тестирање од телефон
+  преку WiFi на истата мрежа) - таму треба HTTPS (self-signed сертификат,
+  reverse proxy со TLS, или алатка како `ngrok`/`cloudflared` за туннел),
+  или `adb reverse` (Android) за да се третира како localhost.
+
 ### Тестови
 
 ```bash

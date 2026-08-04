@@ -22,7 +22,28 @@
   <main>
     <!-- ============ SCAN TAB ============ -->
     <section id="tab-scan" class="tab-panel active">
-      <div class="card">
+      <div class="scan-mode-toggle">
+        <button id="mode-live-btn" class="mode-btn active">🎥 Live камера</button>
+        <button id="mode-upload-btn" class="mode-btn">🖼️ Прикачи слика</button>
+      </div>
+
+      <!-- ---- Live camera mode ---- -->
+      <div id="live-mode" class="card">
+        <div class="video-wrap">
+          <video id="camera-video" autoplay playsinline muted></video>
+          <div id="live-badge" class="live-badge" hidden></div>
+        </div>
+        <div class="live-controls">
+          <button id="live-start-btn" class="primary-btn">🎥 Вклучи камера</button>
+          <button id="live-capture-btn" class="secondary-btn" hidden>📸 Сними рачно</button>
+          <button id="live-stop-btn" class="secondary-btn" hidden>⏹ Стоп</button>
+        </div>
+        <p id="live-status" class="status"></p>
+        <canvas id="capture-canvas" hidden></canvas>
+      </div>
+
+      <!-- ---- Upload photo mode ---- -->
+      <div id="upload-mode" class="card" hidden>
         <label class="file-drop" for="image-input">
           <span id="drop-label">📷 Слушни слика / фотографирај</span>
           <input id="image-input" type="file" accept="image/*" capture="environment" hidden />

@@ -11,7 +11,30 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+    // камерата троши батерија/ресурс - гаси се штом се напушти скенирај-табот
+    if (btn.dataset.tab !== "scan") stopLiveCamera();
   });
+});
+
+// ---------- Scan mode toggle (live camera vs upload) ----------
+const modeLiveBtn = document.getElementById("mode-live-btn");
+const modeUploadBtn = document.getElementById("mode-upload-btn");
+const liveModeEl = document.getElementById("live-mode");
+const uploadModeEl = document.getElementById("upload-mode");
+
+modeLiveBtn.addEventListener("click", () => {
+  modeLiveBtn.classList.add("active");
+  modeUploadBtn.classList.remove("active");
+  liveModeEl.hidden = false;
+  uploadModeEl.hidden = true;
+});
+
+modeUploadBtn.addEventListener("click", () => {
+  modeUploadBtn.classList.add("active");
+  modeLiveBtn.classList.remove("active");
+  uploadModeEl.hidden = false;
+  liveModeEl.hidden = true;
+  stopLiveCamera();
 });
 
 // ---------- Scan tab ----------
@@ -67,6 +90,161 @@ resolveRecognizedBtn.addEventListener("click", () => {
   solveAndRender(recognizedText.value, scanStatus);
 });
 
+// ---------- Live camera mode ----------
+const videoEl = document.getElementById("camera-video");
+const liveBadge = document.getElementById("live-badge");
+const liveStartBtn = document.getElementById("live-start-btn");
+const liveCaptureBtn = document.getElementById("live-capture-btn");
+const liveStopBtn = document.getElementById("live-stop-btn");
+const liveStatus = document.getElementById("live-status");
+const captureCanvas = document.getElementById("capture-canvas");
+
+const LIVE_SCAN_INTERVAL_MS = 1200;
+const STABLE_FRAMES_REQUIRED = 2; // ист текст, во X последователни рамки -> решавај
+
+let cameraStream = null;
+let liveTimer = null;
+let liveBusy = false; // спречи преклопување на барања додека претходното не заврши
+let lastSeenText = null;
+let stableCount = 0;
+
+async function startLiveCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus(liveStatus, "Овој browser не поддржува пристап до камера (getUserMedia).", "error");
+    return;
+  }
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+  } catch (err) {
+    setStatus(liveStatus, "Не можам да пристапам до камерата: " + err.message, "error");
+    return;
+  }
+
+  videoEl.srcObject = cameraStream;
+  liveStartBtn.hidden = true;
+  liveCaptureBtn.hidden = false;
+  liveStopBtn.hidden = false;
+  liveBadge.hidden = false;
+  liveBadge.textContent = "👀 Барам израз...";
+  setStatus(liveStatus, "", "");
+
+  lastSeenText = null;
+  stableCount = 0;
+  liveTimer = setInterval(() => captureAndRecognize(false), LIVE_SCAN_INTERVAL_MS);
+}
+
+function stopLiveCamera() {
+  if (liveTimer) {
+    clearInterval(liveTimer);
+    liveTimer = null;
+  }
+  if (cameraStream) {
+    cameraStream.getTracks().forEach((track) => track.stop());
+    cameraStream = null;
+  }
+  videoEl.srcObject = null;
+  liveStartBtn.hidden = false;
+  liveStartBtn.textContent = "🎥 Вклучи камера";
+  liveCaptureBtn.hidden = true;
+  liveStopBtn.hidden = true;
+  liveBadge.hidden = true;
+}
+
+function captureFrameBlob() {
+  return new Promise((resolve) => {
+    if (!videoEl.videoWidth) {
+      resolve(null);
+      return;
+    }
+    captureCanvas.width = videoEl.videoWidth;
+    captureCanvas.height = videoEl.videoHeight;
+    const ctx = captureCanvas.getContext("2d");
+    ctx.drawImage(videoEl, 0, 0, captureCanvas.width, captureCanvas.height);
+    captureCanvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.85);
+  });
+}
+
+async function captureAndRecognize(forceSolve) {
+  if (liveBusy || !cameraStream) return;
+  liveBusy = true;
+  try {
+    const blob = await captureFrameBlob();
+    if (!blob) return;
+
+    const formData = new FormData();
+    formData.append("file", blob, "frame.jpg");
+
+    const res = await fetch(`${API_BASE}/api/ocr`, { method: "POST", body: formData });
+    if (!res.ok) {
+      // ништо не е препознаено на овој frame - тивко продолжи, без грешка на екран
+      liveBadge.textContent = "👀 Барам израз...";
+      lastSeenText = null;
+      stableCount = 0;
+      return;
+    }
+
+    const data = await res.json();
+    const text = (data.normalized_text || data.raw_text || "").trim();
+    if (!text) return;
+
+    liveBadge.textContent = `Гледам: ${text}`;
+
+    if (forceSolve) {
+      await lockAndSolve(text);
+      return;
+    }
+
+    if (text === lastSeenText) {
+      stableCount += 1;
+    } else {
+      lastSeenText = text;
+      stableCount = 1;
+    }
+
+    if (stableCount >= STABLE_FRAMES_REQUIRED) {
+      await lockAndSolve(text);
+    }
+  } catch (err) {
+    // мрежна/друга грешка на еден frame - следниот интервал ќе пробa повторно
+  } finally {
+    liveBusy = false;
+  }
+}
+
+async function lockAndSolve(text) {
+  if (liveTimer) {
+    clearInterval(liveTimer);
+    liveTimer = null;
+  }
+  liveBadge.textContent = `✅ Препознаено: ${text}`;
+  setStatus(liveStatus, "Решавам...", "");
+
+  const ok = await solveAndRender(text, liveStatus);
+
+  if (ok) {
+    stopLiveCamera();
+  } else {
+    // не се решило (пр. половина прочитан израз) - продолжи да скенираш
+    lastSeenText = null;
+    stableCount = 0;
+    if (cameraStream) {
+      liveTimer = setInterval(() => captureAndRecognize(false), LIVE_SCAN_INTERVAL_MS);
+    }
+  }
+}
+
+liveStartBtn.addEventListener("click", startLiveCamera);
+liveStopBtn.addEventListener("click", stopLiveCamera);
+liveCaptureBtn.addEventListener("click", () => captureAndRecognize(true));
+
+// прекини ја камерата ако корисникот ја напушти/минимизира страницата
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopLiveCamera();
+});
+
 // ---------- Calculator tab ----------
 const calcInput = document.getElementById("calc-input");
 const calcSolveBtn = document.getElementById("calc-solve-btn");
@@ -114,7 +292,7 @@ const graphImg = document.getElementById("graph-img");
 async function solveAndRender(inputText, statusEl) {
   if (!inputText || !inputText.trim()) {
     setStatus(statusEl, "Внеси или скенирај израз прво.", "error");
-    return;
+    return false;
   }
   setStatus(statusEl, "Решавам...", "");
 
@@ -129,9 +307,11 @@ async function solveAndRender(inputText, statusEl) {
 
     renderResult(data);
     setStatus(statusEl, "Готово!", "ok");
+    return true;
   } catch (err) {
     setStatus(statusEl, err.message, "error");
     resultsSection.hidden = true;
+    return false;
   }
 }
 
