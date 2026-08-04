@@ -73,6 +73,14 @@ def test_latex_to_plain_basic_constructs():
     assert latex_to_plain(r"\left(x+1\right)\times 2") == "(x+1)* 2"
 
 
+def test_latex_to_plain_strips_spurious_matrix_wrapper():
+    # Реален случај забележан од handwriting сервисот - моделот понекогаш
+    # "гледа" вишок ред (пр. линија од хартијата) и го враќа изразот
+    # завиткан во \begin{matrix}...\end{matrix} со празен втор ред.
+    assert latex_to_plain(r"\begin{matrix}1+1\\ \end{matrix}") == "1+1"
+    assert latex_to_plain(r"\begin{matrix}2x+3=11\\ \end{matrix}") == "2x+3=11"
+
+
 def test_parse_latex_from_handwriting_model():
     parsed = parse_latex(r"1+1")
     result = solve(parsed)

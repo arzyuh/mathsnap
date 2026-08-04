@@ -58,6 +58,22 @@ _SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]*)\}")
 _BRACED_POWER_RE = re.compile(r"\^\s*\{([^{}]*)\}")
 _SUBSCRIPT_RE = re.compile(r"_\s*\{?[^{}\s]*\}?")  # индекси - ги отфрламе (вон опфат)
 
+# \begin{matrix}...\end{matrix} (и pmatrix/bmatrix/array итн.) - моделот
+# понекогаш "гледа" вишок ред (пр. линија од хартијата, сенка) и го враќа
+# изразот завиткан во multi-row конструкција. За основна алгебра земаме
+# само единствениот непразен ред.
+_ENV_RE = re.compile(r"\\(?:begin|end)\{[a-zA-Z*]+\}(?:\{[^{}]*\})?")
+
+
+def _strip_matrix_rows(text: str) -> str:
+    text = _ENV_RE.sub("", text)
+    if "\\\\" in text:
+        rows = [r.strip() for r in text.split("\\\\")]
+        rows = [r for r in rows if r]
+        if rows:
+            text = rows[0]
+    return text
+
 _LATEX_REPLACEMENTS = {
     r"\left": "",
     r"\right": "",
@@ -76,6 +92,7 @@ def latex_to_plain(latex: str) -> str:
     """Претвора (основен подмножество) LaTeX во ASCII израз што
     normalize_text()/parse_expr() можат да го разберат."""
     text = latex.strip()
+    text = _strip_matrix_rows(text)
 
     # \frac{a}{b} -> (a)/(b) - примени повеќепати за да фатиш неколку
     # дропки во истиот израз (без вгнездени дропки - вон опфат на MVP)
