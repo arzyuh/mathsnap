@@ -125,6 +125,49 @@ async def ocr_endpoint(file: UploadFile = File(...)) -> OcrResponse:
     return OcrResponse(raw_text=raw_text, normalized_text=normalized)
 
 
+@app.post("/api/ocr-accurate", response_model=OcrResponse)
+async def ocr_accurate_endpoint(file: UploadFile = File(...)) -> OcrResponse:
+    """Иста намена како /api/ocr, но преку точниот ракописен модел (без
+    веднаш да решава) - за да можеш да го провериш/поправиш препознаениот
+    текст пред да се реши (моделот не е 100% точен - пр. знае да "види"
+    дропка таму каде нема, ~78% совршена точност)."""
+    content_type = file.content_type or ""
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=422, detail="Датотеката мора да биде слика.")
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=422, detail="Празна слика.")
+
+    latex = ocr.recognize_handwriting_accurate(image_bytes)
+    if latex:
+        ocr_logger.info("Handwriting service latex=%r", latex)
+        try:
+            normalized = parse_latex(latex).normalized_text
+        except ParseError:
+            normalized = latex
+        return OcrResponse(raw_text=latex, normalized_text=normalized)
+
+    # Fallback: сервисот не работи - падни назад на EasyOCR
+    try:
+        raw_text = ocr.extract_text(image_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"OCR грешка: {exc}") from exc
+
+    if not raw_text:
+        raise HTTPException(
+            status_code=422,
+            detail="Не успеав да препознаам текст на сликата. Пробај со појасна слика.",
+        )
+
+    try:
+        normalized = parse(raw_text).normalized_text
+    except ParseError:
+        normalized = raw_text
+
+    return OcrResponse(raw_text=raw_text, normalized_text=normalized)
+
+
 @app.post("/api/ocr-and-solve")
 async def ocr_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
     """Комбиниран endpoint: слика -> OCR -> решение, во еден повик."""

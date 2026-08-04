@@ -99,14 +99,15 @@ const liveStopBtn = document.getElementById("live-stop-btn");
 const liveStatus = document.getElementById("live-status");
 const captureCanvas = document.getElementById("capture-canvas");
 
-const LIVE_SCAN_INTERVAL_MS = 1200;
-const STABLE_FRAMES_REQUIRED = 2; // ист текст, во X последователни рамки -> решавај
+// Автоматски обиди со точниот (побавен, ~3-6s) модел - без посреден
+// "брз preview" чекор. Интервалот мора да е поголем од времето на
+// инференца за да нема преклопувачки барања (liveBusy flag дополнително
+// штити од тоа).
+const AUTO_SCAN_INTERVAL_MS = 4000;
 
 let cameraStream = null;
 let liveTimer = null;
 let liveBusy = false; // спречи преклопување на барања додека претходното не заврши
-let lastSeenText = null;
-let stableCount = 0;
 
 async function startLiveCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -128,12 +129,10 @@ async function startLiveCamera() {
   liveCaptureBtn.hidden = false;
   liveStopBtn.hidden = false;
   liveBadge.hidden = false;
-  liveBadge.textContent = "👀 Барам израз...";
+  liveBadge.textContent = "🔎 Скенирам...";
   setStatus(liveStatus, "", "");
 
-  lastSeenText = null;
-  stableCount = 0;
-  liveTimer = setInterval(() => captureAndRecognize(false), LIVE_SCAN_INTERVAL_MS);
+  liveTimer = setInterval(() => captureAndSolve(), AUTO_SCAN_INTERVAL_MS);
 }
 
 function stopLiveCamera() {
@@ -167,105 +166,49 @@ function captureFrameBlob() {
   });
 }
 
-async function captureAndRecognize(forceSolve) {
+/**
+ * Земи frame и директно праќај кон точниот модел -> резултат на екран.
+ * Нема посреден "Гледам: ..." текст - само статус додека чека, потоа
+ * директно резултатот (или тивко продолжи ако не успее, нема да те
+ * прекинува со грешки на секои неуспешни обиди).
+ */
+async function captureAndSolve() {
   if (liveBusy || !cameraStream) return;
   liveBusy = true;
+  liveBadge.textContent = "🔎 Скенирам...";
+  liveCaptureBtn.disabled = true;
+
   try {
     const blob = await captureFrameBlob();
     if (!blob) return;
 
-    if (forceSolve) {
-      // Рачно снимање - директно на точниот (побавен) ракописен модел,
-      // не треба прво брз preview.
-      await lockAndSolveAccurate(blob);
-      return;
-    }
-
-    // Брз preview (EasyOCR) - само за badge текст + детекција на
-    // стабилност, НЕ за финалното решавање (тоа оди преку точниот модел).
     const formData = new FormData();
     formData.append("file", blob, "frame.jpg");
 
-    const res = await fetch(`${API_BASE}/api/ocr`, { method: "POST", body: formData });
-    if (!res.ok) {
-      liveBadge.textContent = "👀 Барам израз...";
-      lastSeenText = null;
-      stableCount = 0;
-      return;
-    }
-
-    const data = await res.json();
-    const text = (data.normalized_text || data.raw_text || "").trim();
-    if (!text) return;
-
-    liveBadge.textContent = `Гледам: ${text}`;
-
-    if (text === lastSeenText) {
-      stableCount += 1;
-    } else {
-      lastSeenText = text;
-      stableCount = 1;
-    }
-
-    if (stableCount >= STABLE_FRAMES_REQUIRED) {
-      await lockAndSolveAccurate(blob);
-    }
-  } catch (err) {
-    // мрежна/друга грешка на еден frame - следниот интервал ќе пробa повторно
-  } finally {
-    liveBusy = false;
-  }
-}
-
-async function lockAndSolveAccurate(blob) {
-  if (liveTimer) {
-    clearInterval(liveTimer);
-    liveTimer = null;
-  }
-  liveBadge.textContent = "🔎 Прецизно препознавам...";
-  setStatus(liveStatus, "Ова може да потрае неколку секунди (точен модел за ракопис)...", "");
-  liveCaptureBtn.disabled = true;
-
-  const formData = new FormData();
-  formData.append("file", blob, "frame.jpg");
-
-  let ok = false;
-  try {
     const res = await fetch(`${API_BASE}/api/ocr-accurate-and-solve`, {
       method: "POST",
       body: formData,
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Грешка при препознавање.");
+    if (!res.ok) return; // тивко пробај повторно на следниот интервал
 
-    liveBadge.textContent = `✅ Препознаено: ${data.normalized_text}`;
+    liveBadge.textContent = `✅ ${data.normalized_text}`;
     renderResult(data);
     setStatus(liveStatus, "Готово!", "ok");
-    ok = true;
-  } catch (err) {
-    setStatus(liveStatus, err.message, "error");
-    resultsSection.hidden = true;
-  }
-
-  liveCaptureBtn.disabled = false;
-
-  if (ok) {
     stopLiveCamera();
     liveStartBtn.textContent = "🎥 Скенирај повторно";
     liveStartBtn.hidden = false;
-  } else {
-    // не се решило - продолжи да скенираш
-    lastSeenText = null;
-    stableCount = 0;
-    if (cameraStream) {
-      liveTimer = setInterval(() => captureAndRecognize(false), LIVE_SCAN_INTERVAL_MS);
-    }
+  } catch (err) {
+    // мрежна грешка на еден обид - следниот интервал ќе пробa повторно
+  } finally {
+    liveBusy = false;
+    liveCaptureBtn.disabled = false;
   }
 }
 
 liveStartBtn.addEventListener("click", startLiveCamera);
 liveStopBtn.addEventListener("click", stopLiveCamera);
-liveCaptureBtn.addEventListener("click", () => captureAndRecognize(true));
+liveCaptureBtn.addEventListener("click", () => captureAndSolve());
 
 // прекини ја камерата ако корисникот ја напушти/минимизира страницата
 document.addEventListener("visibilitychange", () => {
