@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import graphing, ocr, solver
-from .expression_parser import ParseError, parse
+from .expression_parser import ParseError, ParsedProblem, parse, parse_latex
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
 ocr_logger = logging.getLogger("photomathj.ocr")
@@ -61,17 +61,12 @@ class OcrResponse(BaseModel):
     normalized_text: str
 
 
-def _solve_payload(raw_text: str) -> dict:
-    try:
-        parsed = parse(raw_text)
-    except ParseError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
+def _solve_payload_from_parsed(parsed: ParsedProblem) -> dict:
     result = solver.solve(parsed)
     has_graph = graphing.build_graph(parsed, result) is not None
 
     return {
-        "raw_text": raw_text,
+        "raw_text": parsed.raw_text,
         "normalized_text": parsed.normalized_text,
         "kind": result["kind"],
         "problem_type": result["problem_type"],
@@ -79,6 +74,14 @@ def _solve_payload(raw_text: str) -> dict:
         "methods": [solver.method_to_dict(m) for m in result["methods"]],
         "graphable": has_graph,
     }
+
+
+def _solve_payload(raw_text: str) -> dict:
+    try:
+        parsed = parse(raw_text)
+    except ParseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _solve_payload_from_parsed(parsed)
 
 
 @app.post("/api/solve")
@@ -130,6 +133,54 @@ async def ocr_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=422, detail="Датотеката мора да биде слика.")
 
     image_bytes = await file.read()
+    try:
+        raw_text = ocr.extract_text(image_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"OCR грешка: {exc}") from exc
+
+    if not raw_text:
+        raise HTTPException(
+            status_code=422,
+            detail="Не успеав да препознаам текст на сликата. Пробај со појасна слика.",
+        )
+
+    return _solve_payload(raw_text)
+
+
+@app.post("/api/ocr-accurate-and-solve")
+async def ocr_accurate_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
+    """
+    "Точна" верзија на /api/ocr-and-solve - користи го специјализираниот
+    ракописен модел (backend/handwriting_service/, посебен процес) наместо
+    EasyOCR. Побавно (~3-6s), но значително подобро на ракопис - затоа
+    се користи само за финалното снимање (рачно копче / стабилизирано
+    live скенирање), не за секој live preview frame.
+
+    Ако сервисот не работи, автоматски паѓа назад на EasyOCR
+    (истото однесување како /api/ocr-and-solve).
+    """
+    content_type = file.content_type or ""
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=422, detail="Датотеката мора да биде слика.")
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=422, detail="Празна слика.")
+
+    latex = ocr.recognize_handwriting_accurate(image_bytes)
+
+    if latex:
+        ocr_logger.info("Handwriting service latex=%r", latex)
+        try:
+            parsed = parse_latex(latex)
+        except ParseError:
+            # моделот врати нешто што не парсира - падни назад на EasyOCR
+            # наместо веднаш да откажеш
+            latex = None
+        else:
+            return _solve_payload_from_parsed(parsed)
+
+    # Fallback: ракописниот сервис не работи/не даде употреблив резултат
     try:
         raw_text = ocr.extract_text(image_bytes)
     except Exception as exc:

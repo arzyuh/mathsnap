@@ -1,0 +1,12 @@
+# ВАЖНО: овие мора да се инсталираат во ПОСЕБЕН venv (.venv_trocr/ во
+# root на проектот), НЕ во истото опкружување како главниот backend -
+# верзиите тука конфликтираат со transformers verзијата што ја користи
+# EasyOCR/главниот backend. Види backend/handwriting_service/server.py
+# за детално објаснување зошто.
+#
+# Поставување (од root на проектот):
+#   python -m venv .venv_trocr
+#   .venv_trocr\Scripts\pip install -r backend/handwriting_service/requirements.txt
+transformers==4.46.0
+torch==2.5.1
+pillow

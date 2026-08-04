@@ -174,12 +174,20 @@ async function captureAndRecognize(forceSolve) {
     const blob = await captureFrameBlob();
     if (!blob) return;
 
+    if (forceSolve) {
+      // Рачно снимање - директно на точниот (побавен) ракописен модел,
+      // не треба прво брз preview.
+      await lockAndSolveAccurate(blob);
+      return;
+    }
+
+    // Брз preview (EasyOCR) - само за badge текст + детекција на
+    // стабилност, НЕ за финалното решавање (тоа оди преку точниот модел).
     const formData = new FormData();
     formData.append("file", blob, "frame.jpg");
 
     const res = await fetch(`${API_BASE}/api/ocr`, { method: "POST", body: formData });
     if (!res.ok) {
-      // ништо не е препознаено на овој frame - тивко продолжи, без грешка на екран
       liveBadge.textContent = "👀 Барам израз...";
       lastSeenText = null;
       stableCount = 0;
@@ -192,11 +200,6 @@ async function captureAndRecognize(forceSolve) {
 
     liveBadge.textContent = `Гледам: ${text}`;
 
-    if (forceSolve) {
-      await lockAndSolve(text);
-      return;
-    }
-
     if (text === lastSeenText) {
       stableCount += 1;
     } else {
@@ -205,7 +208,7 @@ async function captureAndRecognize(forceSolve) {
     }
 
     if (stableCount >= STABLE_FRAMES_REQUIRED) {
-      await lockAndSolve(text);
+      await lockAndSolveAccurate(blob);
     }
   } catch (err) {
     // мрежна/друга грешка на еден frame - следниот интервал ќе пробa повторно
@@ -214,20 +217,44 @@ async function captureAndRecognize(forceSolve) {
   }
 }
 
-async function lockAndSolve(text) {
+async function lockAndSolveAccurate(blob) {
   if (liveTimer) {
     clearInterval(liveTimer);
     liveTimer = null;
   }
-  liveBadge.textContent = `✅ Препознаено: ${text}`;
-  setStatus(liveStatus, "Решавам...", "");
+  liveBadge.textContent = "🔎 Прецизно препознавам...";
+  setStatus(liveStatus, "Ова може да потрае неколку секунди (точен модел за ракопис)...", "");
+  liveCaptureBtn.disabled = true;
 
-  const ok = await solveAndRender(text, liveStatus);
+  const formData = new FormData();
+  formData.append("file", blob, "frame.jpg");
+
+  let ok = false;
+  try {
+    const res = await fetch(`${API_BASE}/api/ocr-accurate-and-solve`, {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Грешка при препознавање.");
+
+    liveBadge.textContent = `✅ Препознаено: ${data.normalized_text}`;
+    renderResult(data);
+    setStatus(liveStatus, "Готово!", "ok");
+    ok = true;
+  } catch (err) {
+    setStatus(liveStatus, err.message, "error");
+    resultsSection.hidden = true;
+  }
+
+  liveCaptureBtn.disabled = false;
 
   if (ok) {
     stopLiveCamera();
+    liveStartBtn.textContent = "🎥 Скенирај повторно";
+    liveStartBtn.hidden = false;
   } else {
-    // не се решило (пр. половина прочитан израз) - продолжи да скенираш
+    // не се решило - продолжи да скенираш
     lastSeenText = null;
     stableCount = 0;
     if (cameraStream) {

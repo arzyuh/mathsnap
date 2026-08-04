@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+.venv_trocr/
 venv/
 env/
 *.egg-info/
@@ -10,3 +11,4 @@ Thumbs.db
 *.log
 .idea/
 .vscode/
+.claude/

@@ -7,6 +7,7 @@ Parser модул - претворa суров текст (од OCR или ра�
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from sympy import Eq
@@ -44,6 +45,56 @@ class ParseError(ValueError):
     """Изразот не можеше да се разбере/парсира."""
 
 
+# ---------------------------------------------------------------------------
+# LaTeX -> plain текст (за излезот од специјализираниот TrOCR_Math_handwritten
+# модел, кој враќа LaTeX наместо обичен ASCII израз). Не користиме
+# latex2sympy2 - пакетот е скршен на овој систем (antlr4 верзиски конфликт) -
+# затоа рачно ги нормализираме најчестите LaTeX конструкции за основна
+# алгебра, а остатокот минува низ normalize_text() како и обично.
+# ---------------------------------------------------------------------------
+
+_FRAC_RE = re.compile(r"\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+_SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]*)\}")
+_BRACED_POWER_RE = re.compile(r"\^\s*\{([^{}]*)\}")
+_SUBSCRIPT_RE = re.compile(r"_\s*\{?[^{}\s]*\}?")  # индекси - ги отфрламе (вон опфат)
+
+_LATEX_REPLACEMENTS = {
+    r"\left": "",
+    r"\right": "",
+    r"\times": "*",
+    r"\cdot": "*",
+    r"\div": "/",
+    r"\pi": "pi",
+    r"\,": "",
+    r"\;": "",
+    r"\!": "",
+    "$": "",
+}
+
+
+def latex_to_plain(latex: str) -> str:
+    """Претвора (основен подмножество) LaTeX во ASCII израз што
+    normalize_text()/parse_expr() можат да го разберат."""
+    text = latex.strip()
+
+    # \frac{a}{b} -> (a)/(b) - примени повеќепати за да фатиш неколку
+    # дропки во истиот израз (без вгнездени дропки - вон опфат на MVP)
+    prev = None
+    while prev != text:
+        prev = text
+        text = _FRAC_RE.sub(r"(\1)/(\2)", text)
+
+    text = _SQRT_RE.sub(r"sqrt(\1)", text)
+    text = _BRACED_POWER_RE.sub(r"^(\1)", text)
+    text = _SUBSCRIPT_RE.sub("", text)
+
+    for bad, good in _LATEX_REPLACEMENTS.items():
+        text = text.replace(bad, good)
+
+    text = text.replace("{", "(").replace("}", ")")
+    return text
+
+
 @dataclass
 class ParsedProblem:
     raw_text: str
@@ -66,8 +117,6 @@ def normalize_text(raw: str) -> str:
 
     # sqrt без загради, пр. "sqrt9" -> "sqrt(9)" - чест случај кога OCR
     # го изгуби заградата или корисникот ја испуштил
-    import re
-
     text = re.sub(r"sqrt(\d+(\.\d+)?)", r"sqrt(\1)", text)
     text = re.sub(r"sqrt([a-zA-Z])(?!\()", r"sqrt(\1)", text)
 
@@ -119,4 +168,19 @@ def parse(raw_text: str) -> ParsedProblem:
         kind=kind,
         sympy_obj=sympy_obj,
         variables=free_symbols,
+    )
+
+
+def parse_latex(latex: str) -> ParsedProblem:
+    """Convenience: LaTeX израз (пр. излез од TrOCR_Math_handwritten) ->
+    ParsedProblem. За raw_text го чуваме оригиналниот LaTeX (не plain
+    верзијата) за да остане видливо што точно препознал моделот."""
+    plain = latex_to_plain(latex)
+    parsed = parse(plain)
+    return ParsedProblem(
+        raw_text=latex,
+        normalized_text=parsed.normalized_text,
+        kind=parsed.kind,
+        sympy_obj=parsed.sympy_obj,
+        variables=parsed.variables,
     )

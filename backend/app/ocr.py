@@ -19,12 +19,20 @@ from __future__ import annotations
 
 import logging
 import threading
+import urllib.error
+import urllib.request
 
 import cv2
 import numpy as np
 import pytesseract
 
 logger = logging.getLogger(__name__)
+
+# Адреса на посебниот "точен" ракописен сервис (види
+# backend/handwriting_service/server.py - работи во сопствено venv
+# поради incompatibility на checkpoint-от со главната transformers верзија).
+HANDWRITING_SERVICE_URL = "http://127.0.0.1:8001/recognize"
+HANDWRITING_SERVICE_TIMEOUT_S = 20
 
 # Дозволени карактери - го ограничува просторот на препознавање само на
 # симболи релевантни за математички изрази (го намалува бројот на грешки).
@@ -189,6 +197,38 @@ def extract_text(image_bytes: bytes, multiline: bool = False) -> str:
         logger.exception("EasyOCR failed, falling back to Tesseract")
 
     return extract_text_tesseract(image_bytes, multiline)
+
+
+def recognize_handwriting_accurate(image_bytes: bytes) -> str | None:
+    """
+    "Точна" ракописна препознавање преку специјализираниот
+    TrOCR_Math_handwritten модел (посебен сервис, види
+    backend/handwriting_service/server.py). Побавно (~3-6s на CPU) од
+    EasyOCR, но значително попрецизно на ракопис - затоа НЕ се користи
+    за секој live-preview frame, туку само за финалното "снимање"
+    (рачно копче или кога live скенирањето се стабилизира).
+
+    Враќа LaTeX стринг, или None ако сервисот не работи/е недостапен
+    (повикувачот тогаш треба да падне назад на extract_text()).
+    """
+    try:
+        req = urllib.request.Request(
+            HANDWRITING_SERVICE_URL, data=image_bytes, method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=HANDWRITING_SERVICE_TIMEOUT_S) as resp:
+            import json
+
+            payload = json.loads(resp.read().decode("utf-8"))
+            return payload.get("latex", "").strip() or None
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
+        logger.warning(
+            "Ракописниот сервис (%s) не е достапен - паѓам назад на EasyOCR.",
+            HANDWRITING_SERVICE_URL,
+        )
+        return None
+    except Exception:
+        logger.exception("Ракописниот сервис врати неочекувана грешка")
+        return None
 
 
 def extract_text_tesseract(image_bytes: bytes, multiline: bool = False) -> str:

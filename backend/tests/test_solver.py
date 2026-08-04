@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.expression_parser import parse
+from app.expression_parser import latex_to_plain, parse, parse_latex
 from app.solver import solve
 
 
@@ -64,3 +64,21 @@ def test_implicit_multiplication_sqrt():
     result = solve(parsed)
     assert result["problem_type"] == "simplify"
     assert result["methods"][0].result_text == "4"
+
+
+def test_latex_to_plain_basic_constructs():
+    assert latex_to_plain(r"\frac{1}{2}+x") == "(1)/(2)+x"
+    assert latex_to_plain(r"x^{2}-5x+6=0") == "x^(2)-5x+6=0"
+    assert latex_to_plain(r"\sqrt{9}+1") == "sqrt(9)+1"
+    assert latex_to_plain(r"\left(x+1\right)\times 2") == "(x+1)* 2"
+
+
+def test_parse_latex_from_handwriting_model():
+    parsed = parse_latex(r"1+1")
+    result = solve(parsed)
+    assert result["problem_type"] == "simplify"
+    assert result["methods"][0].result_text == "2"
+
+    parsed_eq = parse_latex(r"x^{2}-5x+6=0")
+    result_eq = solve(parsed_eq)
+    assert result_eq["problem_type"] == "quadratic"
