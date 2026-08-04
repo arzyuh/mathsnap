@@ -1,0 +1,115 @@
+"""
+Orchestrator - го зема испарсираниот проблем (ParsedProblem), го
+класифицира по тип, и повикува соодветен "narrator" од steps.py за
+да произведе еден или повеќе методи со чекори.
+
+Ова е местото каде се одлучува "неколку методи на решавање" -
+точка 4 од фичерите на Photomath.
+"""
+from __future__ import annotations
+
+import sympy
+from sympy import Poly, expand
+
+from .expression_parser import ParsedProblem
+from .steps import (
+    Method,
+    simplify_expression_steps,
+    solve_linear_equation,
+    solve_quadratic_factoring,
+    solve_quadratic_formula,
+)
+
+
+class UnsupportedProblem(Exception):
+    pass
+
+
+def _fallback_generic_solve(parsed: ParsedProblem) -> Method:
+    """Кога проблемот е надвор од опфатот со детални чекори (пр. повисок
+    степен, повеќе непознати), сепак пробај со чист SymPy solve/simplify,
+    без наратив - подобро отколку целосно да откаже."""
+    method = Method(name="Општо решение (SymPy)")
+    if parsed.kind == "equation":
+        var = parsed.variables[0] if parsed.variables else None
+        if var is None:
+            raise UnsupportedProblem("Равенката нема непозната променлива.")
+        solutions = sympy.solve(parsed.sympy_obj, var)
+        method.add("Почетна равенка", parsed.sympy_obj)
+        method.result_text = ", ".join(f"x = {s}" for s in solutions) or "нема решение"
+        method.result_latex = ", ".join(f"x = {sympy.latex(s)}" for s in solutions)
+    else:
+        simplified = sympy.simplify(parsed.sympy_obj)
+        method.add("Почетен израз", parsed.sympy_obj)
+        method.result_text = str(simplified)
+        method.result_latex = sympy.latex(simplified)
+    return method
+
+
+def solve(parsed: ParsedProblem) -> dict:
+    """
+    Враќа речник:
+    {
+        "kind": "equation" | "expression",
+        "problem_type": "linear" | "quadratic" | "simplify" | "general",
+        "variable": "x" | None,
+        "methods": [Method, ...],
+        "graphable": bool,
+    }
+    """
+    result = {
+        "kind": parsed.kind,
+        "problem_type": "general",
+        "variable": None,
+        "methods": [],
+        "graphable": False,
+    }
+
+    if parsed.kind == "expression":
+        result["problem_type"] = "simplify"
+        result["methods"] = [simplify_expression_steps(parsed.sympy_obj)]
+        return result
+
+    # kind == "equation"
+    if len(parsed.variables) != 1:
+        # 0 непознати (пр. "2+2=4") или повеќе (систем равенки) - вон опфат
+        result["methods"] = [_fallback_generic_solve(parsed)]
+        return result
+
+    var = parsed.variables[0]
+    result["variable"] = str(var)
+
+    moved = expand(parsed.sympy_obj.lhs - parsed.sympy_obj.rhs)
+    try:
+        degree = Poly(moved, var).degree()
+    except sympy.PolynomialError:
+        result["methods"] = [_fallback_generic_solve(parsed)]
+        return result
+
+    if degree == 1:
+        result["problem_type"] = "linear"
+        result["methods"] = [solve_linear_equation(parsed.sympy_obj, var)]
+    elif degree == 2:
+        result["problem_type"] = "quadratic"
+        methods = []
+        factoring = solve_quadratic_factoring(parsed.sympy_obj, var)
+        if factoring is not None:
+            methods.append(factoring)
+        methods.append(solve_quadratic_formula(parsed.sympy_obj, var))
+        result["methods"] = methods
+    else:
+        result["methods"] = [_fallback_generic_solve(parsed)]
+
+    return result
+
+
+def method_to_dict(method: Method) -> dict:
+    return {
+        "name": method.name,
+        "steps": [
+            {"explanation": s.explanation, "expr_latex": s.expr_latex}
+            for s in method.steps
+        ],
+        "result_text": method.result_text,
+        "result_latex": method.result_latex,
+    }

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="mk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>PhotoMathJ</title>
+<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">📐 PhotoMathJ</div>
+    <p class="tagline">Скенирај или внеси математички проблем</p>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="scan">📷 Скенирај</button>
+    <button class="tab-btn" data-tab="calc">🔢 Калкулатор</button>
+  </nav>
+
+  <main>
+    <!-- ============ SCAN TAB ============ -->
+    <section id="tab-scan" class="tab-panel active">
+      <div class="card">
+        <label class="file-drop" for="image-input">
+          <span id="drop-label">📷 Слушни слика / фотографирај</span>
+          <input id="image-input" type="file" accept="image/*" capture="environment" hidden />
+        </label>
+        <img id="preview" class="preview" hidden alt="преглед на сликата" />
+        <button id="scan-btn" class="primary-btn" disabled>Препознај и реши</button>
+        <p id="scan-status" class="status"></p>
+      </div>
+
+      <div id="scan-recognized" class="card" hidden>
+        <h3>Препознаено:</h3>
+        <input id="recognized-text" type="text" class="text-input" />
+        <button id="resolve-recognized-btn" class="secondary-btn">Реши повторно</button>
+      </div>
+    </section>
+
+    <!-- ============ CALC TAB ============ -->
+    <section id="tab-calc" class="tab-panel">
+      <div class="card">
+        <input id="calc-input" type="text" class="text-input calc-display" placeholder="пр. 2x + 3 = 11" />
+        <div class="keypad">
+          <button data-insert="7">7</button><button data-insert="8">8</button><button data-insert="9">9</button><button data-insert="/">÷</button>
+          <button data-insert="4">4</button><button data-insert="5">5</button><button data-insert="6">6</button><button data-insert="*">×</button>
+          <button data-insert="1">1</button><button data-insert="2">2</button><button data-insert="3">3</button><button data-insert="-">−</button>
+          <button data-insert="0">0</button><button data-insert=".">.</button><button data-insert="x">x</button><button data-insert="+">+</button>
+          <button data-insert="(">(</button><button data-insert=")">)</button><button data-insert="^2">x²</button><button data-insert="^">^</button>
+          <button data-insert="sqrt()">√</button><button data-insert="=">=</button>
+          <button id="calc-clear" class="wide">Избриши</button>
+          <button id="calc-back">⌫</button>
+        </div>
+        <button id="calc-solve-btn" class="primary-btn">Реши</button>
+        <p id="calc-status" class="status"></p>
+      </div>
+    </section>
+
+    <!-- ============ RESULTS ============ -->
+    <section id="results" hidden>
+      <div class="card result-card">
+        <h2>Резултат</h2>
+        <div id="methods-container"></div>
+        <div id="graph-container" hidden>
+          <h3>График</h3>
+          <img id="graph-img" alt="график" />
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>MVP - печатен текст, основна алгебра (линеарни и квадратни равенки, симплификација).</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

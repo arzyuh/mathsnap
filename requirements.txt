@@ -1,0 +1,9 @@
+fastapi==0.136.3
+uvicorn==0.30.6
+python-multipart==0.0.32
+opencv-python==4.13.0.92
+pytesseract==0.3.13
+pillow==10.4.0
+numpy==2.2.6
+sympy==1.14.0
+matplotlib==3.10.8
