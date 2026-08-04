@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import sympy
-from sympy import Eq, Symbol
+from sympy import Eq
 from sympy.parsing.sympy_parser import (
     convert_xor,
     implicit_multiplication_application,
@@ -102,7 +101,11 @@ def parse(raw_text: str) -> ParsedProblem:
         else:
             sympy_obj = parse_expr(normalized, transformations=_TRANSFORMATIONS)
             kind = "expression"
-    except (sympy.SympifyError, SyntaxError, TypeError) as exc:
+    except Exception as exc:
+        # SymPy/Python-тен tokenizer-от може да фрли разни типови грешки на
+        # "смет" (garbage) внес - SympifyError, SyntaxError, TokenError,
+        # AttributeError, RecursionError итн. Сите ги третираме исто: тоа
+        # е неуспешен parse на корисничкиот/OCR внес, не bug во апликацијата.
         raise ParseError(
             f"Не можам да го парсирам изразот '{normalized}'. "
             f"Провери дали е точно препознаен/внесен."

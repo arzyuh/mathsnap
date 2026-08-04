@@ -43,6 +43,27 @@ def _decode_image(image_bytes: bytes) -> np.ndarray:
     return img
 
 
+def _remove_ruled_lines(gray: np.ndarray) -> np.ndarray:
+    """Отстранува долги хоризонтални линии (пр. тетратка на квадратчиња/
+    линии) кои силно го мешаат OCR-от - лесно се препознаваат погрешно
+    како делови од карактери (=, -, _). Го детектира со морфолошко
+    отворање со широк хоризонтален kernel, па ги "избришува" (бои во бело)."""
+    inv = cv2.bitwise_not(gray)
+    _, binary = cv2.threshold(inv, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+    line_width = max(gray.shape[1] // 15, 25)
+    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (line_width, 1))
+    detected_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, horiz_kernel, iterations=1)
+
+    # Здебели ги малку детектираните линии за да се покрие и антиалиасинг
+    # околу нив, потоа "избриши" ги (стави бело) на оригиналната слика.
+    detected_lines = cv2.dilate(detected_lines, np.ones((3, 3), np.uint8), iterations=1)
+
+    result = gray.copy()
+    result[detected_lines > 0] = 255
+    return result
+
+
 def _deskew(gray: np.ndarray) -> np.ndarray:
     """Исправа мало закривување (rotation) на текстот, ако постои."""
     thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
@@ -79,9 +100,11 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+    no_lines = _remove_ruled_lines(gray)
+
     # Отстранување шум, но чувајќи ги рабовите (важно за тенки цртички,
     # пр. знакот за минус или дропка)
-    denoised = cv2.bilateralFilter(gray, d=9, sigmaColor=75, sigmaSpace=75)
+    denoised = cv2.bilateralFilter(no_lines, d=9, sigmaColor=75, sigmaSpace=75)
 
     # Зголемување на резолуцијата помага значително на Tesseract
     # кога сликата од камера е мала/оддалечена
