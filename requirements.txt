@@ -3,6 +3,7 @@ uvicorn==0.30.6
 python-multipart==0.0.32
 opencv-python==4.13.0.92
 pytesseract==0.3.13
+easyocr==1.7.2
 pillow==10.4.0
 numpy==2.2.6
 sympy==1.14.0

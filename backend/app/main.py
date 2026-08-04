@@ -11,6 +11,7 @@ FastAPI backend - го поврзува целиот pipeline:
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -23,6 +24,21 @@ from . import graphing, ocr, solver
 from .expression_parser import ParseError, parse
 
 app = FastAPI(title="PhotoMathJ API", version="0.1.0")
+
+
+@app.on_event("startup")
+def _warm_up_ocr_model() -> None:
+    """EasyOCR-от вчитува тежини од дискот при прв повик (~2s) - го
+    правиме тоа во background thread при стартување на серверот, за
+    првиот корисник (пр. прв frame од live камерата) да не чека."""
+
+    def _load():
+        try:
+            ocr.get_reader()
+        except Exception:
+            pass  # ако не успее, extract_text() сепак ќе падне на Tesseract
+
+    threading.Thread(target=_load, daemon=True).start()
 
 app.add_middleware(
     CORSMiddleware,
