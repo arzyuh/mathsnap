@@ -190,7 +190,26 @@ async function captureAndSolve() {
       body: formData,
     });
     const data = await res.json();
-    if (!res.ok) return; // тивко пробај повторно на следниот интервал
+    if (!res.ok) {
+      // "Делумно препознаено" - серверот врати нешто конкретно што не
+      // успеа целосно да се разбере (пр. "6+6..."). Подобро е веднаш да
+      // му го покажеме на корисникот за поправка, отколку тивко да
+      // продолжиме (или да прикажеме случајно погрешен резултат од
+      // послаб fallback engine).
+      const detail = data.detail;
+      if (detail && typeof detail === "object" && detail.raw_text) {
+        stopLiveCamera();
+        liveStartBtn.textContent = "🎥 Скенирај повторно";
+        liveStartBtn.hidden = false;
+        correctionInput.value = detail.raw_text;
+        methodsContainer.innerHTML = "";
+        graphContainer.hidden = true;
+        resultsSection.hidden = false;
+        setStatus(correctionStatus, detail.message || "Делумно препознаено - провери/поправи го текстот.", "error");
+        resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      return; // обична грешка (пр. сервисот недостапен) - тивко пробај повторно
+    }
 
     liveBadge.textContent = `✅ ${data.normalized_text}`;
     renderResult(data);

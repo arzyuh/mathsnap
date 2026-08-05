@@ -212,18 +212,29 @@ async def ocr_accurate_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
 
     latex = ocr.recognize_handwriting_accurate(image_bytes)
 
-    if latex:
+    if latex is not None:
+        # Сервисот е достапен и врати НЕШТО - дури и ако не успее целосно
+        # да се парсира, ПОДОБРО е да му го покажеме на корисникот точно
+        # што "прочита" моделот (за да го поправи во correction полето)
+        # отколку тивко да префрлиме на EasyOCR, кој на ракопис е послаб
+        # и може да "прочита" нешто сосема друго - лажно веродостоен, но
+        # погрешен резултат без никаква назнака дека нешто тргнало наопаку
+        # (реален случај: "6+6" -> модел даде "6+6..." -> не парсира ->
+        # стар код тивко падна на EasyOCR -> прочита "aa" -> "решение" a²).
         ocr_logger.info("Handwriting service latex=%r", latex)
         try:
             parsed = parse_latex(latex)
         except ParseError:
-            # моделот врати нешто што не парсира - падни назад на EasyOCR
-            # наместо веднаш да откажеш
-            latex = None
-        else:
-            return _solve_payload_from_parsed(parsed)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": f"Делумно препознаено: „{latex}“ - провери/поправи го текстот подолу.",
+                    "raw_text": latex,
+                },
+            )
+        return _solve_payload_from_parsed(parsed)
 
-    # Fallback: ракописниот сервис не работи/не даде употреблив резултат
+    # Fallback: ракописниот сервис воопшто не работи (down/недостапен)
     try:
         raw_text = ocr.extract_text(image_bytes)
     except Exception as exc:

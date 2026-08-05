@@ -94,6 +94,15 @@ def test_invalid_characters_raise_parse_error_not_silent_wrong_answer():
             pass
 
 
+def test_strips_trailing_ellipsis_artifact():
+    # Реален случај - handwriting моделот врати "6+6..." (trailing точки,
+    # генеративен артефакт) наместо чисто "6+6".
+    parsed = parse("6+6...")
+    assert parsed.normalized_text == "6+6"
+    result = solve(parsed)
+    assert result["methods"][0].result_text == "12"
+
+
 def test_parse_latex_from_handwriting_model():
     parsed = parse_latex(r"1+1")
     result = solve(parsed)
