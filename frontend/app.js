@@ -258,6 +258,16 @@ const resultsSection = document.getElementById("results");
 const methodsContainer = document.getElementById("methods-container");
 const graphContainer = document.getElementById("graph-container");
 const graphImg = document.getElementById("graph-img");
+const correctionInput = document.getElementById("result-correction-input");
+const correctionBtn = document.getElementById("result-correction-btn");
+const correctionStatus = document.getElementById("correction-status");
+
+correctionBtn.addEventListener("click", () => {
+  solveAndRender(correctionInput.value, correctionStatus);
+});
+correctionInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") solveAndRender(correctionInput.value, correctionStatus);
+});
 
 async function solveAndRender(inputText, statusEl) {
   if (!inputText || !inputText.trim()) {
@@ -286,6 +296,8 @@ async function solveAndRender(inputText, statusEl) {
 }
 
 function renderResult(data) {
+  correctionInput.value = data.normalized_text || "";
+  setStatus(correctionStatus, "", "");
   methodsContainer.innerHTML = "";
 
   data.methods.forEach((method) => {

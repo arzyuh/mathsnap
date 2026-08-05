@@ -83,6 +83,14 @@
     <section id="results" hidden>
       <div class="card result-card">
         <h2>Резултат</h2>
+        <div class="correction-row">
+          <label for="result-correction-input">Погрешно препознаено? Поправи:</label>
+          <div class="correction-inputs">
+            <input id="result-correction-input" type="text" class="text-input" />
+            <button id="result-correction-btn" class="secondary-btn">Реши повторно</button>
+          </div>
+          <p id="correction-status" class="status"></p>
+        </div>
         <div id="methods-container"></div>
         <div id="graph-container" hidden>
           <h3>График</h3>

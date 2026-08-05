@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.expression_parser import latex_to_plain, parse, parse_latex
+from app.expression_parser import ParseError, latex_to_plain, parse, parse_latex
 from app.solver import solve
 
 
@@ -79,6 +79,19 @@ def test_latex_to_plain_strips_spurious_matrix_wrapper():
     # завиткан во \begin{matrix}...\end{matrix} со празен втор ред.
     assert latex_to_plain(r"\begin{matrix}1+1\\ \end{matrix}") == "1+1"
     assert latex_to_plain(r"\begin{matrix}2x+3=11\\ \end{matrix}") == "2x+3=11"
+
+
+def test_invalid_characters_raise_parse_error_not_silent_wrong_answer():
+    # Реален случај - handwriting моделот целосно погрешно "прочитал"
+    # "4-3" како 2x2 матрица '4&3 / 4&3'. Без валидацијата, "4&3" тивко
+    # би се парсирало како Python bitwise-AND (4&3=0) и би дало лажно
+    # веродостоен, но целосно погрешен резултат "0" наместо грешка.
+    for bad_input in ["4&3", "3~3", "4#3", "x|y"]:
+        try:
+            parse(bad_input)
+            assert False, f"{bad_input!r} требаше да фрли ParseError"
+        except ParseError:
+            pass
 
 
 def test_parse_latex_from_handwriting_model():
