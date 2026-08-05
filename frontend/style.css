@@ -234,6 +234,17 @@ main { max-width: 480px; margin: 0 auto; padding: 16px; }
 .keypad button:active { background: var(--primary); color: white; }
 .keypad button.wide { grid-column: span 2; }
 
+.keypad-advanced {
+  grid-template-columns: repeat(6, 1fr);
+  margin-top: 8px;
+}
+.keypad-advanced button {
+  padding: 10px 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  background: var(--bg);
+}
+
 .result-card h2 { margin-top: 0; }
 
 .correction-row {

@@ -27,7 +27,7 @@ from .expression_parser import ParseError, ParsedProblem, parse, parse_latex
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
 ocr_logger = logging.getLogger("photomathj.ocr")
 
-app = FastAPI(title="PhotoMathJ API", version="0.1.0")
+app = FastAPI(title="MathSnap API", version="0.2.0")
 
 
 @app.on_event("startup")

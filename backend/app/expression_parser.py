@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from sympy import Eq
+from sympy import Eq, Symbol
 from sympy.parsing.sympy_parser import (
     convert_xor,
     implicit_multiplication_application,
@@ -37,8 +37,12 @@ _SYMBOL_REPLACEMENTS = {
     "π": "pi",
     "²": "**2",
     "³": "**3",
-    ",": ".",  # 3,5 -> 3.5 (европски децимален запис)
 }
+
+# "," само помеѓу цифри е европски децимален запис ("3,5" -> "3.5") -
+# НЕ смее да биде blanket замена бидејќи "," исто така се користи како
+# разделувач на аргументи (пр. "diff(x^2,x)", "x+y=5;x-y=1" системи).
+_DECIMAL_COMMA_RE = re.compile(r"(?<=\d),(?=\d)")
 
 
 class ParseError(ValueError):
@@ -48,8 +52,17 @@ class ParseError(ValueError):
 # Дозволени карактери во нормализиран израз - сè останато (пр. "&", "|",
 # "~", "\", "{", "}", "#") се третира како грешка во препознавањето, не
 # се проследува понатаму кон sympy parse_expr (кое инаку може "тивко" да
-# ги прифати некои од овие како валидни Python оператори).
-_ALLOWED_CHARS_RE = re.compile(r"[0-9a-zA-Z+\-*/^.,=()<>]*")
+# ги прифати некои од овие како валидни Python оператори). ";" е дозволен
+# бидејќи се користи само како разделувач на систем равенки (никогаш не
+# стигнува до parse_expr самиот - се дели пред тоа).
+_ALLOWED_CHARS_RE = re.compile(r"[0-9a-zA-Z+\-*/^.,=()<>;]*")
+
+# diff(израз, променлива) / integrate(израз, променлива) - препознаени
+# ПРЕД генеричкото equation/expression парсирање, за да можеме да го
+# сочуваме оригиналниот израз (не веднаш-пресметаниот derivative/integral)
+# и да генерираме чекор-по-чекор наратив во steps.py.
+_DIFF_CALL_RE = re.compile(r"^diff\((.+),([a-zA-Z]\w*)\)$")
+_INTEGRATE_CALL_RE = re.compile(r"^integrate\((.+),([a-zA-Z]\w*)\)$")
 
 
 # ---------------------------------------------------------------------------
@@ -123,9 +136,10 @@ def latex_to_plain(latex: str) -> str:
 class ParsedProblem:
     raw_text: str
     normalized_text: str
-    kind: str  # "equation" | "expression"
-    sympy_obj: object  # Eq(...) или Expr
+    kind: str  # "equation" | "expression" | "derivative" | "integral" | "system"
+    sympy_obj: object  # Eq(...) / Expr / list[Eq] (за "system")
     variables: list = field(default_factory=list)
+    op_var: object = None  # Symbol - само за "derivative"/"integral" (по која променлива)
 
 
 def normalize_text(raw: str) -> str:
@@ -135,6 +149,7 @@ def normalize_text(raw: str) -> str:
 
     for bad, good in _SYMBOL_REPLACEMENTS.items():
         text = text.replace(bad, good)
+    text = _DECIMAL_COMMA_RE.sub(".", text)
 
     # Отстрани празни места - "2 x + 3" -> "2x+3"
     text = "".join(text.split())
@@ -161,7 +176,7 @@ def normalize_text(raw: str) -> str:
     # реален случај забележан од (недоволно исчистен) LaTeX излез од
     # handwriting моделот кога содржи стрски matrix-артефакти ("&").
     if not _ALLOWED_CHARS_RE.fullmatch(text):
-        bad_chars = sorted(set(re.sub(r"[0-9a-zA-Z+\-*/^.,=()<>]", "", text)))
+        bad_chars = sorted(set(re.sub(r"[0-9a-zA-Z+\-*/^.,=()<>;]", "", text)))
         raise ParseError(
             f"Изразот содржи непрепознаени карактери ({''.join(bad_chars)}) - "
             f"веројатно грешка во препознавањето. Провери/поправи го текстот."
@@ -170,49 +185,117 @@ def normalize_text(raw: str) -> str:
     return text
 
 
-def parse(raw_text: str) -> ParsedProblem:
-    """
-    Главна функција: суров текст -> ParsedProblem со sympy објект.
-
-    Поддржува равенки ("2x+3=11") и обични изрази за симплификација
-    ("2x+3(x-1)").
-    """
-    normalized = normalize_text(raw_text)
-
-    # Дозволуваме само еден "=" (равенка). Повеќе од еден "=" не е
-    # валидна равенка во овој MVP опсег.
-    if normalized.count("=") > 1:
-        raise ParseError("Изразот содржи повеќе од еден знак '=' - не можам да го решам.")
-
+def _safe_parse_expr(text: str):
+    """parse_expr() со единствено, конзистентно фаќање грешки - секое
+    "смет" (garbage) влезно парче (од OCR или рачен внес) станува чист
+    ParseError, никогаш необработен crash."""
     try:
-        if "=" in normalized:
-            lhs_str, rhs_str = normalized.split("=")
-            lhs = parse_expr(lhs_str, transformations=_TRANSFORMATIONS)
-            rhs = parse_expr(rhs_str, transformations=_TRANSFORMATIONS)
-            sympy_obj = Eq(lhs, rhs)
-            kind = "equation"
-        else:
-            sympy_obj = parse_expr(normalized, transformations=_TRANSFORMATIONS)
-            kind = "expression"
+        return parse_expr(text, transformations=_TRANSFORMATIONS)
     except Exception as exc:
-        # SymPy/Python-тен tokenizer-от може да фрли разни типови грешки на
-        # "смет" (garbage) внес - SympifyError, SyntaxError, TokenError,
-        # AttributeError, RecursionError итн. Сите ги третираме исто: тоа
-        # е неуспешен parse на корисничкиот/OCR внес, не bug во апликацијата.
         raise ParseError(
-            f"Не можам да го парсирам изразот '{normalized}'. "
+            f"Не можам да го парсирам изразот '{text}'. "
             f"Провери дали е точно препознаен/внесен."
         ) from exc
 
-    free_symbols = sorted(sympy_obj.free_symbols, key=lambda s: s.name)
+
+def _parse_equation(raw_text: str, normalized: str) -> ParsedProblem:
+    if normalized.count("=") > 1:
+        raise ParseError("Изразот содржи повеќе од еден знак '=' - не можам да го решам.")
+
+    lhs_str, rhs_str = normalized.split("=")
+    lhs = _safe_parse_expr(lhs_str)
+    rhs = _safe_parse_expr(rhs_str)
+    sympy_obj = Eq(lhs, rhs)
+
+    return ParsedProblem(
+        raw_text=raw_text,
+        normalized_text=normalized,
+        kind="equation",
+        sympy_obj=sympy_obj,
+        variables=sorted(sympy_obj.free_symbols, key=lambda s: s.name),
+    )
+
+
+def _parse_expression(raw_text: str, normalized: str) -> ParsedProblem:
+    sympy_obj = _safe_parse_expr(normalized)
+    return ParsedProblem(
+        raw_text=raw_text,
+        normalized_text=normalized,
+        kind="expression",
+        sympy_obj=sympy_obj,
+        variables=sorted(sympy_obj.free_symbols, key=lambda s: s.name),
+    )
+
+
+def _parse_calculus(raw_text: str, normalized: str, match: re.Match, kind: str) -> ParsedProblem:
+    inner_str, var_str = match.group(1), match.group(2)
+    inner_expr = _safe_parse_expr(inner_str)
+    op_var = Symbol(var_str)
 
     return ParsedProblem(
         raw_text=raw_text,
         normalized_text=normalized,
         kind=kind,
-        sympy_obj=sympy_obj,
-        variables=free_symbols,
+        sympy_obj=inner_expr,
+        variables=sorted(inner_expr.free_symbols, key=lambda s: s.name),
+        op_var=op_var,
     )
+
+
+def _parse_system(raw_text: str, normalized: str) -> ParsedProblem:
+    parts = [p for p in normalized.split(";") if p]
+    if len(parts) < 2:
+        raise ParseError(
+            "Системот равенки треба да содржи најмалку 2 равенки, "
+            "одделени со ';' (пр. 'x+y=5;x-y=1')."
+        )
+
+    equations = []
+    all_vars = set()
+    for part in parts:
+        if part.count("=") != 1:
+            raise ParseError(f"'{part}' не е валидна равенка (треба точно еден знак '=').")
+        lhs_str, rhs_str = part.split("=")
+        lhs = _safe_parse_expr(lhs_str)
+        rhs = _safe_parse_expr(rhs_str)
+        eq = Eq(lhs, rhs)
+        equations.append(eq)
+        all_vars |= eq.free_symbols
+
+    return ParsedProblem(
+        raw_text=raw_text,
+        normalized_text=normalized,
+        kind="system",
+        sympy_obj=equations,
+        variables=sorted(all_vars, key=lambda s: s.name),
+    )
+
+
+def parse(raw_text: str) -> ParsedProblem:
+    """
+    Главна функција: суров текст -> ParsedProblem со sympy објект.
+
+    Поддржува равенки ("2x+3=11"), обични изрази за симплификација
+    ("2x+3(x-1)"), деривати ("diff(x^2+3x,x)"), интеграли
+    ("integrate(x^2,x)") и системи равенки ("x+y=5;x-y=1").
+    """
+    normalized = normalize_text(raw_text)
+
+    if ";" in normalized:
+        return _parse_system(raw_text, normalized)
+
+    diff_match = _DIFF_CALL_RE.match(normalized)
+    if diff_match:
+        return _parse_calculus(raw_text, normalized, diff_match, kind="derivative")
+
+    integrate_match = _INTEGRATE_CALL_RE.match(normalized)
+    if integrate_match:
+        return _parse_calculus(raw_text, normalized, integrate_match, kind="integral")
+
+    if "=" in normalized:
+        return _parse_equation(raw_text, normalized)
+
+    return _parse_expression(raw_text, normalized)
 
 
 def parse_latex(latex: str) -> ParsedProblem:
@@ -227,4 +310,5 @@ def parse_latex(latex: str) -> ParsedProblem:
         kind=parsed.kind,
         sympy_obj=parsed.sympy_obj,
         variables=parsed.variables,
+        op_var=parsed.op_var,
     )

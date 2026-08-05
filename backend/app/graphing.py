@@ -101,7 +101,7 @@ def build_graph(parsed: ParsedProblem, solve_result: dict) -> bytes | None:
     за дадениот проблем. Враќа None ако проблемот не е погоден за
     графички приказ (пр. повеќе од една непозната)."""
     try:
-        if parsed.kind == "expression" and len(parsed.variables) == 1:
+        if parsed.kind in ("expression", "derivative", "integral") and len(parsed.variables) == 1:
             return render_single_expression(parsed.sympy_obj, parsed.variables[0])
 
         if parsed.kind == "equation" and len(parsed.variables) == 1:

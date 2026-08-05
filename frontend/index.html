@@ -3,14 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>Photomath</title>
-<link rel="stylesheet" href="style.css" />
+<title>MathSnap</title>
+<!-- ВАЖНО: зголеми го ?v=N на style.css/app.js при секоја промена -
+     browser-от агресивно кешира статични JS/CSS фајлови, без верзија
+     корисниците би виделе стара кеширана логика по deploy. -->
+<link rel="stylesheet" href="style.css?v=2" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 </head>
 <body>
   <header class="topbar">
-    <div class="logo">📐 Photomath</div>
+    <div class="logo">📐 MathSnap</div>
     <p class="tagline">Скенирај или внеси математички проблем</p>
   </header>
 
@@ -74,6 +77,14 @@
           <button id="calc-clear" class="wide">Избриши</button>
           <button id="calc-back">⌫</button>
         </div>
+        <div class="keypad keypad-advanced">
+          <button data-insert="sin()">sin</button>
+          <button data-insert="cos()">cos</button>
+          <button data-insert="tan()">tan</button>
+          <button data-insert=";">;</button>
+          <button data-insert="diff(,x)" data-cursor-offset="3">d/dx</button>
+          <button data-insert="integrate(,x)" data-cursor-offset="3">∫ dx</button>
+        </div>
         <button id="calc-solve-btn" class="primary-btn">Реши</button>
         <p id="calc-status" class="status"></p>
       </div>
@@ -101,9 +112,9 @@
   </main>
 
   <footer>
-    <p>MVP - печатен текст, основна алгебра (линеарни и квадратни равенки, симплификација).</p>
+    <p>Поддржува: линеарни/квадратни/кубни равенки, системи равенки, деривати, интеграли, основна тригонометрија и симплификација.</p>
   </footer>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>

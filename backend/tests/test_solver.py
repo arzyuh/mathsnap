@@ -29,7 +29,7 @@ def test_quadratic_factoring_and_formula():
     parsed = parse("x^2-5x+6=0")
     result = solve(parsed)
     assert result["problem_type"] == "quadratic"
-    method_names = [m.name for m in result["methods"]]
+    method_names = [m.name.lower() for m in result["methods"]]
     assert any("факторизација" in n for n in method_names)
     assert any("формула" in n for n in method_names)
     for m in result["methods"]:
@@ -112,3 +112,66 @@ def test_parse_latex_from_handwriting_model():
     parsed_eq = parse_latex(r"x^{2}-5x+6=0")
     result_eq = solve(parsed_eq)
     assert result_eq["problem_type"] == "quadratic"
+
+
+def test_derivative_polynomial():
+    parsed = parse("diff(x^2+3x,x)")
+    assert parsed.kind == "derivative"
+    result = solve(parsed)
+    assert result["problem_type"] == "derivative"
+    assert result["methods"][0].result_text == "2*x + 3"
+
+
+def test_derivative_trig():
+    parsed = parse("diff(sin(x),x)")
+    result = solve(parsed)
+    assert result["methods"][0].result_text == "cos(x)"
+
+
+def test_integral_polynomial():
+    parsed = parse("integrate(x^2,x)")
+    assert parsed.kind == "integral"
+    result = solve(parsed)
+    assert result["problem_type"] == "integral"
+    assert result["methods"][0].result_text == "C + x**3/3"
+
+
+def test_integral_trig():
+    parsed = parse("integrate(sin(x),x)")
+    result = solve(parsed)
+    assert result["methods"][0].result_text == "C - cos(x)"
+
+
+def test_linear_system_2x2():
+    parsed = parse("x+y=5;x-y=1")
+    assert parsed.kind == "system"
+    assert len(parsed.variables) == 2
+    result = solve(parsed)
+    assert result["problem_type"] == "system"
+    result_text = result["methods"][0].result_text
+    assert "x = 3" in result_text and "y = 2" in result_text
+
+
+def test_basic_trig_equation():
+    parsed = parse("sin(x)=0.5")
+    result = solve(parsed)
+    assert result["problem_type"] == "trigonometric"
+    assert "2" in result["methods"][0].result_text  # 2*pi*n период
+
+
+def test_cubic_factoring():
+    parsed = parse("x^3-6x^2+11x-6=0")
+    result = solve(parsed)
+    assert result["problem_type"] == "higher_degree"
+    result_text = result["methods"][0].result_text
+    for root in ("1", "2", "3"):
+        assert root in result_text
+
+
+def test_cubic_general_fallback():
+    # Не се факторизира убаво над рационални броеви - паѓа на општо
+    # решение, сепак мора да врати нешто (не грешка/crash)
+    parsed = parse("x^3+x+1=0")
+    result = solve(parsed)
+    assert result["problem_type"] == "higher_degree"
+    assert result["methods"][0].result_text

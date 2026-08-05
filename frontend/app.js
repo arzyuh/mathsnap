@@ -244,7 +244,11 @@ const calcBackBtn = document.getElementById("calc-back");
 document.querySelectorAll(".keypad button[data-insert]").forEach((btn) => {
   btn.addEventListener("click", () => {
     const insert = btn.dataset.insert;
-    const cursorAdjust = insert.endsWith("()") ? 1 : 0;
+    const cursorAdjust = btn.dataset.cursorOffset
+      ? parseInt(btn.dataset.cursorOffset, 10)
+      : insert.endsWith("()")
+      ? 1
+      : 0;
     const pos = calcInput.selectionStart ?? calcInput.value.length;
     calcInput.value =
       calcInput.value.slice(0, pos) + insert + calcInput.value.slice(pos);
