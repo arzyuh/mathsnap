@@ -95,6 +95,81 @@ def _remove_ruled_lines(gray: np.ndarray) -> np.ndarray:
     return result
 
 
+def crop_to_ink_content(image_bytes: bytes, padding_ratio: float = 0.25) -> bytes:
+    """
+    Автоматски исечи ја сликата само на регионот со мастило/ракопис,
+    отфрлувајќи ја позадината (соба, прсти, рабови на хартијата итн.).
+
+    ЗОШТО: handwriting моделот (ViT encoder, 384x384 вход) ја гледа
+    ЦЕЛАТА необработена фотографија од live камерата - кога изразот
+    зафаќа мал дел од кадарот, при намалување до 384x384 тој станува
+    ситен/неjасен, а вишок содржина (фрлеви, сенки, рабови) станува
+    релативно поизразена - забележано е дека тоа го "лаже" моделот да
+    халуцинира дропки/матрици таму каде ги нема (пр. "1+1" -> \\frac{1}{1+1}).
+    Приближувањето само на пишаниот дел значително го подобрува ова.
+
+    Ако не се детектира доволно содржина (пр. празна/нејасна слика),
+    ја враќа оригиналната слика непроменета - fail-safe, никогаш не
+    смее ова да го скрши препознавањето.
+    """
+    try:
+        img = _decode_image(image_bytes)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        no_lines = _remove_ruled_lines(gray)
+        h_img, w_img = gray.shape[:2]
+
+        inv = cv2.bitwise_not(no_lines)
+        _, binary = cv2.threshold(inv, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+        # ВАЖНО: не смееме едноставно да земеме bounding box на СИТЕ
+        # ненулти пиксели - расфрлан позадински шум (сенки, текстура)
+        # честo допира до самите рабови на сликата и bounding box-от би
+        # опфатил речиси цела слика (тестирано - точно тоа се случуваше).
+        # Затоа: спој ги соседните потези во поголеми "blobs" (close),
+        # па земи ги само контурите доволно големи да бидат вистински
+        # ракопис (не изолирани точки шум).
+        close_size = max(int(min(h_img, w_img) * 0.015), 4)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
+        cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+        contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return image_bytes
+
+        min_area = 0.0008 * (w_img * h_img)  # отфрли контури помали од ова (шум)
+        big_boxes = [cv2.boundingRect(c) for c in contours if cv2.contourArea(c) >= min_area]
+        if not big_boxes:
+            return image_bytes
+
+        x = min(bx for bx, by, bw, bh in big_boxes)
+        y = min(by for bx, by, bw, bh in big_boxes)
+        x2 = max(bx + bw for bx, by, bw, bh in big_boxes)
+        y2 = max(by + bh for bx, by, bw, bh in big_boxes)
+        w, h = x2 - x, y2 - y
+
+        # Премногу мал регион (< 0.5% од сликата) - веројатно шум, не
+        # вистинска содржина, поризично е да се исече отколку да се
+        # остави како е
+        if (w * h) < 0.005 * (w_img * h_img):
+            return image_bytes
+
+        pad_x = int(w * padding_ratio)
+        pad_y = int(h * padding_ratio)
+        x0 = max(0, x - pad_x)
+        y0 = max(0, y - pad_y)
+        x1 = min(w_img, x + w + pad_x)
+        y1 = min(h_img, y + h + pad_y)
+
+        cropped = img[y0:y1, x0:x1]
+        ok, buf = cv2.imencode(".png", cropped)
+        if not ok:
+            return image_bytes
+        return buf.tobytes()
+    except Exception:
+        logger.exception("crop_to_ink_content failed - користам оригинална слика")
+        return image_bytes
+
+
 def _deskew(gray: np.ndarray) -> np.ndarray:
     """Исправа мало закривување (rotation) на текстот, ако постои."""
     thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
@@ -211,6 +286,7 @@ def recognize_handwriting_accurate(image_bytes: bytes) -> str | None:
     Враќа LaTeX стринг, или None ако сервисот не работи/е недостапен
     (повикувачот тогаш треба да падне назад на extract_text()).
     """
+    image_bytes = crop_to_ink_content(image_bytes)
     try:
         req = urllib.request.Request(
             HANDWRITING_SERVICE_URL, data=image_bytes, method="POST"
