@@ -1,11 +1,12 @@
 :root {
-  --primary: #2563eb;
-  --primary-dark: #1d4ed8;
-  --bg: #f4f6fb;
+  --primary: #4f46e5;
+  --primary-dark: #3730a3;
+  --accent: #7c3aed;
+  --bg: #f4f3fb;
   --card-bg: #ffffff;
-  --text: #1e2430;
+  --text: #1e1b2e;
   --muted: #6b7280;
-  --border: #e2e6ee;
+  --border: #e5e1f5;
   --success: #16a34a;
   --error: #dc2626;
   --radius: 14px;
@@ -22,11 +23,12 @@ body {
 }
 
 .topbar {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: linear-gradient(135deg, var(--primary), var(--accent));
   color: white;
   padding: 20px 16px 28px;
   text-align: center;
   border-radius: 0 0 24px 24px;
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
 }
 .logo { font-size: 1.4rem; font-weight: 700; }
 .tagline { margin: 6px 0 0; opacity: 0.9; font-size: 0.9rem; }
@@ -50,7 +52,7 @@ body {
   color: var(--muted);
 }
 .tab-btn.active {
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary), var(--accent));
   color: white;
   font-weight: 600;
 }
@@ -84,7 +86,7 @@ main { max-width: 480px; margin: 0 auto; padding: 16px; }
   cursor: pointer;
 }
 .mode-btn.active {
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary), var(--accent));
   border-color: var(--primary);
   color: white;
   font-weight: 600;
@@ -161,14 +163,15 @@ main { max-width: 480px; margin: 0 auto; padding: 16px; }
   padding: 14px;
   border: none;
   border-radius: 12px;
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary), var(--accent));
   color: white;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
 }
-.primary-btn:disabled { background: #a9bce8; cursor: not-allowed; }
-.primary-btn:hover:not(:disabled) { background: var(--primary-dark); }
+.primary-btn:disabled { background: #c3bff0; box-shadow: none; cursor: not-allowed; }
+.primary-btn:hover:not(:disabled) { background: linear-gradient(135deg, var(--primary-dark), var(--primary)); }
 
 .secondary-btn {
   width: 100%;
@@ -281,7 +284,8 @@ main { max-width: 480px; margin: 0 auto; padding: 16px; }
 .result-final {
   margin-top: 12px;
   padding: 12px;
-  background: #eef4ff;
+  background: linear-gradient(135deg, #eef0fd, #f3ebfc);
+  border: 1px solid #ddd6fe;
   border-radius: 10px;
   font-size: 1.15rem;
   font-weight: 600;
