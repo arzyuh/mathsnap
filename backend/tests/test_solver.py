@@ -175,3 +175,27 @@ def test_cubic_general_fallback():
     result = solve(parsed)
     assert result["problem_type"] == "higher_degree"
     assert result["methods"][0].result_text
+
+
+def test_trig_without_parens_defaults_to_degrees():
+    # Реален случај - "sin30" (без загради) погрешно се делеше на s*i*n*30
+    # (implicit multiplication). Сега автоматски добива загради И се
+    # третира како степени (школски стандард), не радијани.
+    for text, expected in [("sin30", "1/2"), ("cos60", "1/2"), ("tan45", "1")]:
+        parsed = parse(text)
+        result = solve(parsed)
+        assert result["methods"][0].result_text == expected, text
+
+
+def test_trig_with_pi_stays_radians():
+    parsed = parse("sin(pi/6)")
+    result = solve(parsed)
+    assert result["methods"][0].result_text == "1/2"
+
+
+def test_trig_symbolic_argument_stays_radians_for_calculus():
+    # sin(x) во извод МОРА да остане во радијани - inaku cos(x) правилото
+    # за извод не важи
+    parsed = parse("diff(sin(x),x)")
+    result = solve(parsed)
+    assert result["methods"][0].result_text == "cos(x)"

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from sympy import Eq, Symbol
+from sympy import Eq, Symbol, cos, pi, sin, tan
 from sympy.parsing.sympy_parser import (
     convert_xor,
     implicit_multiplication_application,
@@ -159,6 +159,13 @@ def normalize_text(raw: str) -> str:
     text = re.sub(r"sqrt(\d+(\.\d+)?)", r"sqrt(\1)", text)
     text = re.sub(r"sqrt([a-zA-Z])(?!\()", r"sqrt(\1)", text)
 
+    # sin/cos/tan без загради, пр. "sin30" -> "sin(30)" - без ова SymPy
+    # ги дели буквите s,i,n како посебни променливи (implicit multiplication)
+    # наместо да ја препознае функцијата, реален случај забележан во UI.
+    for _fn in ("sin", "cos", "tan"):
+        text = re.sub(rf"{_fn}(\d+(\.\d+)?)", rf"{_fn}(\1)", text)
+        text = re.sub(rf"{_fn}([a-zA-Z])(?!\()", rf"{_fn}(\1)", text)
+
     # Отстрани trailing "..." - забележан артефакт кај handwriting моделот
     # (генеративен модел понекогаш "продолжува" со точки на крајот наместо
     # чисто да застане). Еден единствен trailing "." (децимала без остаток,
@@ -185,12 +192,32 @@ def normalize_text(raw: str) -> str:
     return text
 
 
+_TRIG_FUNCS = (sin, cos, tan)
+
+
+def _degrees_to_radians_in_trig(expr):
+    """sin(30) во школски контекст значи 30°, не 30 радијани (SymPy
+    default). Конвертираме sin/cos/tan САМО кога аргументот е чист број
+    БЕЗ pi во него (пр. sin(30) -> sin(30°), но sin(pi/6) си останува
+    радијани - експлицитноे бара корисникот со pi). Симболични аргументи
+    (пр. sin(x) во извод/интеграл) НЕ се допираат - таму мора радијани
+    за да важат стандардните правила за изводи/интеграли."""
+    replacements = {}
+    for func in _TRIG_FUNCS:
+        for node in expr.atoms(func):
+            arg = node.args[0]
+            if arg.is_number and not arg.has(pi):
+                replacements[node] = func(arg * pi / 180)
+    return expr.xreplace(replacements) if replacements else expr
+
+
 def _safe_parse_expr(text: str):
     """parse_expr() со единствено, конзистентно фаќање грешки - секое
     "смет" (garbage) влезно парче (од OCR или рачен внес) станува чист
     ParseError, никогаш необработен crash."""
     try:
-        return parse_expr(text, transformations=_TRANSFORMATIONS)
+        expr = parse_expr(text, transformations=_TRANSFORMATIONS)
+        return _degrees_to_radians_in_trig(expr)
     except Exception as exc:
         raise ParseError(
             f"Не можам да го парсирам изразот '{text}'. "
