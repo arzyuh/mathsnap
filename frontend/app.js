@@ -108,6 +108,7 @@ const AUTO_SCAN_INTERVAL_MS = 4000;
 let cameraStream = null;
 let liveTimer = null;
 let liveBusy = false; // спречи преклопување на барања додека претходното не заврши
+let lastCandidateText = null; // за stability проверка (2 последователни исти читања)
 
 async function startLiveCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -132,7 +133,8 @@ async function startLiveCamera() {
   liveBadge.textContent = "🔎 Скенирам...";
   setStatus(liveStatus, "", "");
 
-  liveTimer = setInterval(() => captureAndSolve(), AUTO_SCAN_INTERVAL_MS);
+  lastCandidateText = null;
+  liveTimer = setInterval(() => captureAndCheckStability(), AUTO_SCAN_INTERVAL_MS);
 }
 
 function stopLiveCamera() {
@@ -167,6 +169,63 @@ function captureFrameBlob() {
 }
 
 /**
+ * Автоматскиот live-loop: препознај (без веднаш да решаваш) и барај 2
+ * ПОСЛЕДОВАТЕЛНИ читања што се СОВПАЃААТ пред да го прикажеш резултатот.
+ *
+ * Зошто: моделот понекогаш "халуцинира" структура (пр. лажна дропка) на
+ * само еден frame - реален случај забележан во тестирање. Бидејќи тоа
+ * СЕ парсира успешно (не е грешка, само погрешно прочитано), не можеше
+ * да се фати со проверката за "делумно препознаено". Со барање две
+ * различни камера-снимки да дадат ИСТ резултат, шансата двете да
+ * халуцинираат ist погрешен одговор е многу помала. Нема посреден
+ * "Гледам: ..." текст - badge-от останува неутрален додека не се
+ * потврди резултатот.
+ */
+async function captureAndCheckStability() {
+  if (liveBusy || !cameraStream) return;
+  liveBusy = true;
+  liveBadge.textContent = "🔎 Скенирам...";
+
+  try {
+    const blob = await captureFrameBlob();
+    if (!blob) return;
+
+    const formData = new FormData();
+    formData.append("file", blob, "frame.jpg");
+
+    const res = await fetch(`${API_BASE}/api/ocr-accurate`, { method: "POST", body: formData });
+    if (!res.ok) {
+      lastCandidateText = null; // неуспешно читање - none reset, пробај повторно
+      return;
+    }
+    const data = await res.json();
+    const text = (data.normalized_text || data.raw_text || "").trim();
+    if (!text) return;
+
+    if (text === lastCandidateText) {
+      // 2 последователни исти читања - доволна доверба, реши и прикажи
+      liveBadge.textContent = "🔎 Потврдено, решавам...";
+      const ok = await solveAndRender(text, liveStatus);
+      if (ok) {
+        liveBadge.textContent = `✅ ${text}`;
+        stopLiveCamera();
+        liveStartBtn.textContent = "🎥 Скенирај повторно";
+        liveStartBtn.hidden = false;
+      }
+      lastCandidateText = null;
+    } else {
+      lastCandidateText = text;
+    }
+  } catch (err) {
+    lastCandidateText = null;
+  } finally {
+    liveBusy = false;
+  }
+}
+
+/**
+ * Рачно снимање ("📸 Сними рачно") - веднаш, БЕЗ stability проверка
+ * (корисникот експлицитно бара единечен обид сега).
  * Земи frame и директно праќај кон точниот модел -> резултат на екран.
  * Нема посреден "Гледам: ..." текст - само статус додека чека, потоа
  * директно резултатот (или тивко продолжи ако не успее, нема да те
