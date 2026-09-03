@@ -62,14 +62,19 @@ imageInput.addEventListener("change", () => {
 
 scanBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
-  setStatus(scanStatus, "Препознавам текст од сликата...", "");
+  // /api/ocr-accurate (не /api/ocr) - точниот модел разбира 2D распоред
+  // (дропки, степени), додека EasyOCR чита линеарно лево-кон-десно и
+  // целосно се збунува на вертикална дропка (реален случај: "9-3÷1/3+1"
+  // прочитано како бесмислено "93.3131"). Побавно (~3-6s), но upload
+  // е еднократно дејство - латентноста е прифатлива тука.
+  setStatus(scanStatus, "Препознавам текст од сликата (може да потрае неколку секунди)...", "");
   scanBtn.disabled = true;
 
   const formData = new FormData();
   formData.append("file", selectedFile);
 
   try {
-    const res = await fetch(`${API_BASE}/api/ocr`, { method: "POST", body: formData });
+    const res = await fetch(`${API_BASE}/api/ocr-accurate`, { method: "POST", body: formData });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "OCR грешка.");
 
