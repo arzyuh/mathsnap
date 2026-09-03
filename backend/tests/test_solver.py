@@ -95,6 +95,34 @@ def test_latex_matrix_hallucination_of_minus_reconstructed():
     assert result["methods"][0].result_text == "6"
 
 
+def test_latex_fraction_hallucination_of_simple_arithmetic_resolved():
+    # Најчестиот повторлив образец во сесијава (5+ реални случаи) - моделот
+    # "дуплира" еден операнд како лажен именител/броител: "5+5" ->
+    # \frac{5+5}{5}, "1+1" -> \frac{1}{1+1}, "10+4" -> \frac{10+4}{4},
+    # "1+2" -> \frac{1+2}{2}. Секогаш едната страна е гол број што веќе
+    # се јавува како операнд во другата (со оператор) страна.
+    cases = {
+        r"\frac{5+5}{5}": "10",
+        r"\frac{1}{1+1}": "2",
+        r"\frac{10+4}{4}": "14",
+        r"\frac{1+2}{2}": "3",
+    }
+    for latex_input, expected in cases.items():
+        result = solve(parse_latex(latex_input))
+        assert result["methods"][0].result_text == expected, latex_input
+
+
+def test_legitimate_fractions_not_treated_as_hallucination():
+    # Не смееме да ги "поправиме" вистинските дропки - особено оние со
+    # променливи (алгебра) или каде НИТУ една страна не е гол број.
+    assert latex_to_plain(r"\frac{1}{2}") == "(1)/(2)"
+    assert latex_to_plain(r"\frac{x+2}{2}") == "(x+2)/(2)"
+    assert latex_to_plain(r"\frac{2+3}{4+5}") == "(2+3)/(4+5)"
+
+    result = solve(parse_latex(r"\frac{1}{2}"))
+    assert result["methods"][0].result_text == "1/2"
+
+
 def test_invalid_characters_raise_parse_error_not_silent_wrong_answer():
     # Реален случај - handwriting моделот целосно погрешно "прочитал"
     # "4-3" како 2x2 матрица '4&3 / 4&3'. Без валидацијата, "4&3" тивко

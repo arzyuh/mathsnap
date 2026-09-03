@@ -104,6 +104,41 @@ def _reconstruct_matrix_row_as_subtraction(row: str) -> str:
     return result
 
 
+_BARE_NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?$")
+
+
+def _resolve_fraction_hallucination(numerator: str, denominator: str) -> str | None:
+    """Друг повторлив, документиран образец на дропка-халуцинација (5+
+    реални случаи): моделот "дуплира" еден операнд како именител/броител
+    на измислена дропка - "5+5" -> \\frac{5+5}{5}, "1+1" -> \\frac{1}{1+1},
+    "10+4" -> \\frac{10+4}{4}, "1+2" -> \\frac{1+2}{2}. Секогаш едната
+    страна е гол број кој веќе се јавува како операнд во другата страна
+    (која содржи оператор).
+
+    Строго ограничено на ЧИСТА аритметика (без букви/променливи) за да
+    не ги допре легитимните алгебарски дропки (пр. "(x+2)/2" НЕ се
+    допира бидејќи "x" е буква).
+
+    Враќа ја "вистинската" страна самостојно ако е препознаен образецот,
+    инаку None (третирај го како вистинска дропка)."""
+    if re.search(r"[a-zA-Z]", numerator) or re.search(r"[a-zA-Z]", denominator):
+        return None
+
+    num_bare = bool(_BARE_NUMBER_RE.match(numerator.strip()))
+    den_bare = bool(_BARE_NUMBER_RE.match(denominator.strip()))
+
+    if den_bare and not num_bare:
+        operands = re.findall(r"\d+(?:\.\d+)?", numerator)
+        if denominator.strip().lstrip("-") in operands:
+            return numerator
+    elif num_bare and not den_bare:
+        operands = re.findall(r"\d+(?:\.\d+)?", denominator)
+        if numerator.strip().lstrip("-") in operands:
+            return denominator
+
+    return None
+
+
 def _strip_matrix_rows(text: str) -> str:
     text = _ENV_RE.sub("", text)
     if "\\\\" in text:
@@ -136,10 +171,17 @@ def latex_to_plain(latex: str) -> str:
 
     # \frac{a}{b} -> (a)/(b) - примени повеќепати за да фатиш неколку
     # дропки во истиот израз (без вгнездени дропки - вон опфат на MVP)
+    def _frac_replacement(match: re.Match) -> str:
+        numerator, denominator = match.group(1), match.group(2)
+        resolved = _resolve_fraction_hallucination(numerator, denominator)
+        if resolved is not None:
+            return f"({resolved})"
+        return f"({numerator})/({denominator})"
+
     prev = None
     while prev != text:
         prev = text
-        text = _FRAC_RE.sub(r"(\1)/(\2)", text)
+        text = _FRAC_RE.sub(_frac_replacement, text)
 
     text = _SQRT_RE.sub(r"sqrt(\1)", text)
     text = _BRACED_POWER_RE.sub(r"^(\1)", text)
