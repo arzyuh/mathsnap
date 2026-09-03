@@ -4,10 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>MathSnap</title>
-<!-- ВАЖНО: зголеми го ?v=N на style.css/app.js при секоја промена -
-     browser-от агресивно кешира статични JS/CSS фајлови, без верзија
-     корисниците би виделе стара кеширана логика по deploy. -->
-<link rel="stylesheet" href="style.css?v=2" />
+<!-- ВАЖНО: и на style.css И на app.js - секогаш ИСТ ?v=N, зголемен при
+     СЕКОЈА промена на кој било од двата (дури и ако само едниот е
+     сменет) - browser-от агресивно кешира статични фајлови; заборавен
+     bump на само еден од нив = корисникот гледа стара верзија без
+     никаква грешка (реален случај - style.css заглави на v=2 низ
+     неколку дизајн-commit-и додека app.js се бидуваше редовно). -->
+<link rel="stylesheet" href="style.css?v=5" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 </head>
