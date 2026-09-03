@@ -85,6 +85,25 @@ _SUBSCRIPT_RE = re.compile(r"_\s*\{?[^{}\s]*\}?")  # индекси - ги от�
 _ENV_RE = re.compile(r"\\(?:begin|end)\{[a-zA-Z*]+\}(?:\{[^{}]*\})?")
 
 
+def _reconstruct_matrix_row_as_subtraction(row: str) -> str:
+    """Оваа апликација НИКОГАШ не поддржува матрици/linear algebra - секој
+    \\begin{matrix} излез од моделот е гарантирано халуцинација, никогаш
+    намерен внес. Емпириски утврден повторлив образец (3+ реални случаи):
+    моделот го "гледа" минус знакот (-) како колонски разделувач (&)
+    наместо оператор - пр. "4-3" -> матрица со колони "4" и "3", или
+    "10-4" -> колони "10" и "-4". Го реконструираме минусот автоматски
+    наместо да бараме рачна поправка секој пат."""
+    if "&" not in row:
+        return row
+    cells = [c.strip() for c in row.split("&") if c.strip()]
+    if not cells:
+        return row
+    result = cells[0]
+    for cell in cells[1:]:
+        result += cell if cell[0] in "+-" else f"-{cell}"
+    return result
+
+
 def _strip_matrix_rows(text: str) -> str:
     text = _ENV_RE.sub("", text)
     if "\\\\" in text:
@@ -92,6 +111,7 @@ def _strip_matrix_rows(text: str) -> str:
         rows = [r for r in rows if r]
         if rows:
             text = rows[0]
+    text = _reconstruct_matrix_row_as_subtraction(text)
     return text
 
 _LATEX_REPLACEMENTS = {

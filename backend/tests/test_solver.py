@@ -81,6 +81,20 @@ def test_latex_to_plain_strips_spurious_matrix_wrapper():
     assert latex_to_plain(r"\begin{matrix}2x+3=11\\ \end{matrix}") == "2x+3=11"
 
 
+def test_latex_matrix_hallucination_of_minus_reconstructed():
+    # Повторлив реален образец (3+ случаи) - моделот го "гледа" минус
+    # знакот како колонски разделувач (&) и враќа "4-3" / "10-4" како
+    # матрица наместо равенка со минус. Апликацијава НИКОГАШ не поддржува
+    # матрици, па секој ваков излез е сигурна халуцинација - безбедно е
+    # автоматски да се реконструира минусот наместо рачна поправка.
+    assert latex_to_plain(r"\begin{matrix}4&3\\ 4&3\end{matrix}") == "4-3"
+    assert latex_to_plain(r"\begin{matrix}10&-4\\ 4\end{matrix}") == "10-4"
+
+    parsed = parse_latex(r"\begin{matrix}10&-4\\ 4\end{matrix}")
+    result = solve(parsed)
+    assert result["methods"][0].result_text == "6"
+
+
 def test_invalid_characters_raise_parse_error_not_silent_wrong_answer():
     # Реален случај - handwriting моделот целосно погрешно "прочитал"
     # "4-3" како 2x2 матрица '4&3 / 4&3'. Без валидацијата, "4&3" тивко
