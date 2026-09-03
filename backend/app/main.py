@@ -44,6 +44,15 @@ def _warm_up_ocr_model() -> None:
 
     threading.Thread(target=_load, daemon=True).start()
 
+    if ocr.HANDWRITING_MODE == "inprocess":
+        def _load_handwriting():
+            try:
+                ocr._get_inprocess_handwriting_model()
+            except Exception:
+                logging.getLogger(__name__).exception("Не успеа да се вчита inprocess ракописниот модел")
+
+        threading.Thread(target=_load_handwriting, daemon=True).start()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

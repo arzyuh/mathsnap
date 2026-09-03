@@ -18,6 +18,7 @@ preprocessing-от овде е намерно "лесен" (без threshold/б�
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import urllib.error
 import urllib.request
@@ -30,9 +31,38 @@ logger = logging.getLogger(__name__)
 
 # Адреса на посебниот "точен" ракописен сервис (види
 # backend/handwriting_service/server.py - работи во сопствено venv
-# поради incompatibility на checkpoint-от со главната transformers верзија).
+# поради incompatibility на checkpoint-от со главната transformers верзија
+# на локалниот Windows dev setup).
 HANDWRITING_SERVICE_URL = "http://127.0.0.1:8001/recognize"
 HANDWRITING_SERVICE_TIMEOUT_S = 20
+HANDWRITING_MODEL_NAME = "fhswf/TrOCR_Math_handwritten"
+
+# "http" (default) - повикува посебен сервис преку мрежа, како во
+# локалниот Windows dev setup (два venv-а поради version конфликт).
+# "inprocess" - го вчитува моделот директно во истиот процес/venv -
+# користи се во Docker deployment (HF Spaces) каде инсталираме
+# compatible transformers==4.46.0 + torch==2.5.1 во ЕДЕН environment
+# (потврдено: EasyOCR не бара transformers воопшто, па нема конфликт).
+HANDWRITING_MODE = os.environ.get("HANDWRITING_MODE", "http")
+
+_handwriting_processor = None
+_handwriting_model = None
+_handwriting_lock = threading.Lock()
+
+
+def _get_inprocess_handwriting_model():
+    global _handwriting_processor, _handwriting_model
+    if _handwriting_model is None:
+        with _handwriting_lock:
+            if _handwriting_model is None:
+                from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+
+                logger.info("Вчитувам ракописен модел %s (inprocess) ...", HANDWRITING_MODEL_NAME)
+                _handwriting_processor = TrOCRProcessor.from_pretrained(HANDWRITING_MODEL_NAME)
+                _handwriting_model = VisionEncoderDecoderModel.from_pretrained(HANDWRITING_MODEL_NAME)
+                _handwriting_model.eval()
+                logger.info("Ракописниот модел е вчитан.")
+    return _handwriting_processor, _handwriting_model
 
 # Дозволени карактери - го ограничува просторот на препознавање само на
 # симболи релевантни за математички изрази (го намалува бројот на грешки).
@@ -287,6 +317,23 @@ def recognize_handwriting_accurate(image_bytes: bytes) -> str | None:
     (повикувачот тогаш треба да падне назад на extract_text()).
     """
     image_bytes = crop_to_ink_content(image_bytes)
+
+    if HANDWRITING_MODE == "inprocess":
+        try:
+            import io
+
+            from PIL import Image
+
+            processor, model = _get_inprocess_handwriting_model()
+            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            pixel_values = processor(images=img, return_tensors="pt").pixel_values
+            generated_ids = model.generate(pixel_values, max_length=64)
+            text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+            return text.strip() or None
+        except Exception:
+            logger.exception("Inprocess ракописен модел не успеа")
+            return None
+
     try:
         req = urllib.request.Request(
             HANDWRITING_SERVICE_URL, data=image_bytes, method="POST"

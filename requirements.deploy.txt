@@ -1,0 +1,15 @@
+# За Docker deployment (Dockerfile) - torch/torchvision се инсталираат
+# одделно во Dockerfile-от (CPU-specific index). transformers==4.46.0 е
+# ЗАДОЛЖИТЕЛНА конкретна верзија - checkpoint-от fhswf/TrOCR_Math_handwritten
+# паѓа под понови верзии (RuntimeError: tensor on device meta).
+fastapi==0.136.3
+uvicorn==0.30.6
+python-multipart==0.0.32
+opencv-python-headless==4.13.0.92
+pytesseract==0.3.13
+easyocr==1.7.2
+pillow==10.4.0
+numpy==1.26.4
+sympy==1.14.0
+matplotlib==3.10.8
+transformers==4.46.0
