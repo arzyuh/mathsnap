@@ -134,6 +134,7 @@ async function startLiveCamera() {
   setStatus(liveStatus, "", "");
 
   lastCandidateText = null;
+  attemptCount = 0;
   liveTimer = setInterval(() => captureAndCheckStability(), AUTO_SCAN_INTERVAL_MS);
 }
 
@@ -168,23 +169,27 @@ function captureFrameBlob() {
   });
 }
 
+// Ако по овој број обиди сè уште нема 2 совпаѓања, реши со последното
+// читање и онака - подобро "најдобар обид" отколку бесконечно чекање
+// без никаква повратна информација (реален случај - loop замрзнуваше
+// "Скенирам..." засекогаш кога моделот никогаш не даваше исто читање
+// двапати по ред).
+const MAX_ATTEMPTS_BEFORE_FORCE = 5;
+
+let attemptCount = 0;
+
 /**
  * Автоматскиот live-loop: препознај (без веднаш да решаваш) и барај 2
- * ПОСЛЕДОВАТЕЛНИ читања што се СОВПАЃААТ пред да го прикажеш резултатот.
- *
- * Зошто: моделот понекогаш "халуцинира" структура (пр. лажна дропка) на
- * само еден frame - реален случај забележан во тестирање. Бидејќи тоа
- * СЕ парсира успешно (не е грешка, само погрешно прочитано), не можеше
- * да се фати со проверката за "делумно препознаено". Со барање две
- * различни камера-снимки да дадат ИСТ резултат, шансата двете да
- * халуцинираат ist погрешен одговор е многу помала. Нема посреден
- * "Гледам: ..." текст - badge-от останува неутрален додека не се
- * потврди резултатот.
+ * ПОСЛЕДОВАТЕЛНИ читања што се СОВПАЃААТ пред да го прикажеш резултатот
+ * (доверба дека не е еднократна халуцинација). По MAX_ATTEMPTS_BEFORE_FORCE
+ * неуспешни обиди без совпаѓање, сепак реши со последното читање - за да
+ * не изгледа апликацијата замрзната.
  */
 async function captureAndCheckStability() {
   if (liveBusy || !cameraStream) return;
   liveBusy = true;
-  liveBadge.textContent = "🔎 Скенирам...";
+  attemptCount += 1;
+  liveBadge.textContent = `🔎 Скенирам... (${attemptCount})`;
 
   try {
     const blob = await captureFrameBlob();
@@ -195,22 +200,26 @@ async function captureAndCheckStability() {
 
     const res = await fetch(`${API_BASE}/api/ocr-accurate`, { method: "POST", body: formData });
     if (!res.ok) {
-      lastCandidateText = null; // неуспешно читање - none reset, пробај повторно
+      lastCandidateText = null; // неуспешно читање - reset, пробај повторно
       return;
     }
     const data = await res.json();
     const text = (data.normalized_text || data.raw_text || "").trim();
     if (!text) return;
 
-    if (text === lastCandidateText) {
-      // 2 последователни исти читања - доволна доверба, реши и прикажи
-      liveBadge.textContent = "🔎 Потврдено, решавам...";
+    const confirmed = text === lastCandidateText;
+    const forcedByAttemptLimit = !confirmed && attemptCount >= MAX_ATTEMPTS_BEFORE_FORCE;
+
+    if (confirmed || forcedByAttemptLimit) {
+      liveBadge.textContent = forcedByAttemptLimit ? "🔎 Решавам (најдобар обид)..." : "🔎 Потврдено, решавам...";
       const ok = await solveAndRender(text, liveStatus);
       if (ok) {
         liveBadge.textContent = `✅ ${text}`;
         stopLiveCamera();
         liveStartBtn.textContent = "🎥 Скенирај повторно";
         liveStartBtn.hidden = false;
+      } else {
+        attemptCount = 0; // не успеа - почни бројач одново
       }
       lastCandidateText = null;
     } else {
