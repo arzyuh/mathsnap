@@ -78,6 +78,19 @@ _SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]*)\}")
 _BRACED_POWER_RE = re.compile(r"\^\s*\{([^{}]*)\}")
 _SUBSCRIPT_RE = re.compile(r"_\s*\{?[^{}\s]*\}?")  # индекси - ги отфрламе (вон опфат)
 
+# "Козметички" LaTeX wrapper-команди - апликацијата никогаш не поддржува
+# нивното значење (стил на буква, множество, хоризонтална линија итн.),
+# па секое појавување е гарантирано OCR артефакт. Два реални забележани
+# случаи: \overline{x+y-7;x-y=1} (систем равенки) и \mathbb{x^3-...=0}
+# (кубна равенка) - истиот образец \команда{содржина}, само содржината
+# е важна, wrapper-от се фрла. Само "одвиткуваме" (не бришеме) - за
+# разлика од matrix-случајот, тука нема познат структурен образец за
+# реконструкција на изгубени карактери.
+_TEXT_WRAPPER_RE = re.compile(
+    r"\\(?:overline|underline|mathbb|mathrm|mathit|mathcal|boldsymbol|text|hat|vec|bar)"
+    r"\s*\{([^{}]*)\}"
+)
+
 # \begin{matrix}...\end{matrix} (и pmatrix/bmatrix/array итн.) - моделот
 # понекогаш "гледа" вишок ред (пр. линија од хартијата, сенка) и го враќа
 # изразот завиткан во multi-row конструкција. За основна алгебра земаме
@@ -163,25 +176,94 @@ _LATEX_REPLACEMENTS = {
 }
 
 
+def _read_group(text: str, i: int):
+    """Ако на позиција i (по празни места) почнува "{...}", враќа
+    (содржина, позиција-по-затворената-заграда) со правилно броење на
+    вгнездени загради, инаку None."""
+    while i < len(text) and text[i] == " ":
+        i += 1
+    if i >= len(text) or text[i] != "{":
+        return None
+    depth = 0
+    for j in range(i, len(text)):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[i + 1 : j], j + 1
+    return None  # незатворена заграда
+
+
+def _convert_frac_sqrt(text: str) -> str:
+    out = []
+    i = 0
+    while i < len(text):
+        if text.startswith("\\frac", i):
+            first = _read_group(text, i + 5)
+            second = _read_group(text, first[1]) if first else None
+            if first and second:
+                num = _convert_frac_sqrt(first[0])
+                den = _convert_frac_sqrt(second[0])
+                resolved = _resolve_fraction_hallucination(num, den)
+                out.append(f"({resolved})" if resolved is not None else f"({num})/({den})")
+                i = second[1]
+                continue
+        elif text.startswith("\\sqrt", i):
+            group = _read_group(text, i + 5)
+            if group:
+                out.append(f"sqrt({_convert_frac_sqrt(group[0])})")
+                i = group[1]
+                continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
+
+
+def _convert_integral(text: str) -> str:
+    """\\int f dx -> integrate(f,x). Модели го препознаваат неопределениот
+    интеграл од слика (пр. \\int \\frac{dx}{\\sqrt{...}}), а нашиот парсер
+    очекува integrate(израз,x). Само неопределени интеграли (без граници)."""
+    if not text.lstrip().startswith("\\int"):
+        return text
+    body = re.sub(r"\s+", "", text.lstrip()[4:])
+
+    # \int \frac{dx}{g}  ->  (dx)/(g)  =>  integrate(1/(g), x)
+    m = re.fullmatch(r"\(d([a-z])\)/\((.+)\)", body)
+    if m:
+        return f"integrate(1/({m.group(2)}),{m.group(1)})"
+
+    # \int f dx  =>  integrate(f, x)
+    m = re.fullmatch(r"(.+?)d([a-z])", body)
+    if m:
+        return f"integrate({m.group(1)},{m.group(2)})"
+    return text
+
+
 def latex_to_plain(latex: str) -> str:
     """Претвора (основен подмножество) LaTeX во ASCII израз што
     normalize_text()/parse_expr() можат да го разберат."""
     text = latex.strip()
     text = _strip_matrix_rows(text)
-
-    # \frac{a}{b} -> (a)/(b) - примени повеќепати за да фатиш неколку
-    # дропки во истиот израз (без вгнездени дропки - вон опфат на MVP)
-    def _frac_replacement(match: re.Match) -> str:
-        numerator, denominator = match.group(1), match.group(2)
-        resolved = _resolve_fraction_hallucination(numerator, denominator)
-        if resolved is not None:
-            return f"({resolved})"
-        return f"({numerator})/({denominator})"
-
     prev = None
     while prev != text:
         prev = text
-        text = _FRAC_RE.sub(_frac_replacement, text)
+        text = _TEXT_WRAPPER_RE.sub(r"\1", text)
+
+    # \frac{a}{b} -> (a)/(b) и \sqrt{a} -> sqrt(a), со поддршка за
+    # вгнездување (пр. \frac{dx}{\sqrt{1-x}}) - броиме загради наместо regex.
+    text = _convert_frac_sqrt(text)
+
+    # Напишан знак "^" (пр. "x^2" како буквален текст) моделот го чита како
+    # LaTeX \wedge (симболот ∧ изгледа исто) - или "^{\wedge}2", или
+    # "\wedge 2". Реален случај: "diff(x^2,x)" -> "diff(x^{\wedge}2,x)".
+    text = re.sub(r"\^\s*\{\s*\\wedge\s*\}", "^", text)
+    text = text.replace("\\wedge", "^")
+
+    # Истиот проблем, друга форма: буквален "^" се чита како подигната "1" -
+    # "x^3" -> "x^{1}3". Степен 1 директно пред цифра е бесмислен ("x^1*3"
+    # никој не го пишува така), па е сигурно "^" што го прочитал како 1.
+    text = re.sub(r"\^\s*\{\s*1\s*\}(?=\d)", "^", text)
 
     text = _SQRT_RE.sub(r"sqrt(\1)", text)
     text = _BRACED_POWER_RE.sub(r"^(\1)", text)
@@ -191,6 +273,15 @@ def latex_to_plain(latex: str) -> str:
         text = text.replace(bad, good)
 
     text = text.replace("{", "(").replace("}", ")")
+
+    text = _convert_integral(text)
+
+    # Safety net: секој преостанат "\" (пр. непозната LaTeX команда што
+    # ја нема во _LATEX_REPLACEMENTS, или "\_" остаток по SUBSCRIPT_RE)
+    # никогаш не е валиден во финалниот ASCII израз - отстрани го самиот
+    # backslash (не и текстот околу него, пр. "\alpha" -> "alpha").
+    text = text.replace("\\", "")
+
     return text
 
 
@@ -215,6 +306,17 @@ def normalize_text(raw: str) -> str:
 
     # Отстрани празни места - "2 x + 3" -> "2x+3"
     text = "".join(text.split())
+
+    # Израз никогаш не почнува со "*" - остаток од \cdot/\times што моделот
+    # го "измислил" пред изразот (реален случај: "**diff(x^2,x)").
+    text = text.lstrip("*")
+
+    # "1" (цифра) визуелно наликува на "i"/"l" (мало L) - чест OCR/
+    # ракописен misread, реален случај забележан во UI ("1+1" -> "i+1").
+    # Замени ги САМО кога не се дел од подолг збор (функција/променлива,
+    # пр. "sin", "diff", "integrate") - таму секое "i"/"l" е опкружено со
+    # други букви, па оваа замена никогаш не ги допира.
+    text = re.sub(r"(?<![a-zA-Z])[il](?![a-zA-Z])", "1", text)
 
     # sqrt без загради, пр. "sqrt9" -> "sqrt(9)" - чест случај кога OCR
     # го изгуби заградата или корисникот ја испуштил

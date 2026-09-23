@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import graphing, ocr, solver
-from .expression_parser import ParseError, ParsedProblem, parse, parse_latex
+from .expression_parser import ParseError, ParsedProblem, latex_to_plain, parse, parse_latex
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
 ocr_logger = logging.getLogger("photomathj.ocr")
@@ -154,7 +154,14 @@ async def ocr_accurate_endpoint(file: UploadFile = File(...)) -> OcrResponse:
         try:
             normalized = parse_latex(latex).normalized_text
         except ParseError:
-            normalized = latex
+            # Целосно парсирање не успеа (пр. халуцинирана структура што
+            # нашите heuristics не ја препознаа) - сепак врати ја БАРЕМ
+            # делумно исчистената верзија (latex_to_plain), не сирoв LaTeX.
+            # Важно: ова normalized_text го користи и live-scan флоуto
+            # директно кон /api/solve (кое очекува веќе-чист текст, не
+            # LaTeX) - сирoв LaTeX таму секогаш пропаѓа со "непрепознаени
+            # карактери (\_{})" наместо разбирлива грешка (реален случај).
+            normalized = latex_to_plain(latex)
         return OcrResponse(raw_text=latex, normalized_text=normalized)
 
     # Fallback: сервисот не работи - падни назад на EasyOCR
