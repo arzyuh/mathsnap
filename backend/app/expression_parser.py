@@ -1,10 +1,4 @@
-"""
-Parser модул - претворa суров текст (од OCR или рачен внес) во
-математички објект што SymPy може да го разбере (Expr или Eq).
 
-Ова е слојот помеѓу "суров стринг" и "математичка структура" -
-чекор 2 од архитектурата (види README).
-"""
 from __future__ import annotations
 
 import re
@@ -23,25 +17,20 @@ _TRANSFORMATIONS = standard_transformations + (
     convert_xor,
 )
 
-# Чести замени - Unicode математички симболи, симболи што Tesseract
-# понекогаш ги препознава наместо стандардните ASCII оператори,
-# и чести OCR грешки за математички изрази.
+
 _SYMBOL_REPLACEMENTS = {
     "×": "*",
     "·": "*",
     "÷": "/",
-    "−": "-",  # unicode minus
-    "—": "-",  # em dash
-    "–": "-",  # en dash
+    "−": "-",
+    "—": "-",
+    "–": "-",
     "√": "sqrt",
     "π": "pi",
     "²": "**2",
     "³": "**3",
 }
 
-# "," само помеѓу цифри е европски децимален запис ("3,5" -> "3.5") -
-# НЕ смее да биде blanket замена бидејќи "," исто така се користи како
-# разделувач на аргументи (пр. "diff(x^2,x)", "x+y=5;x-y=1" системи).
 _DECIMAL_COMMA_RE = re.compile(r"(?<=\d),(?=\d)")
 
 
@@ -49,63 +38,30 @@ class ParseError(ValueError):
     """Изразот не можеше да се разбере/парсира."""
 
 
-# Дозволени карактери во нормализиран израз - сè останато (пр. "&", "|",
-# "~", "\", "{", "}", "#") се третира како грешка во препознавањето, не
-# се проследува понатаму кон sympy parse_expr (кое инаку може "тивко" да
-# ги прифати некои од овие како валидни Python оператори). ";" е дозволен
-# бидејќи се користи само како разделувач на систем равенки (никогаш не
-# стигнува до parse_expr самиот - се дели пред тоа).
 _ALLOWED_CHARS_RE = re.compile(r"[0-9a-zA-Z+\-*/^.,=()<>;]*")
 
-# diff(израз, променлива) / integrate(израз, променлива) - препознаени
-# ПРЕД генеричкото equation/expression парсирање, за да можеме да го
-# сочуваме оригиналниот израз (не веднаш-пресметаниот derivative/integral)
-# и да генерираме чекор-по-чекор наратив во steps.py.
+
 _DIFF_CALL_RE = re.compile(r"^diff\((.+),([a-zA-Z]\w*)\)$")
 _INTEGRATE_CALL_RE = re.compile(r"^integrate\((.+),([a-zA-Z]\w*)\)$")
 
-
-# ---------------------------------------------------------------------------
-# LaTeX -> plain текст (за излезот од специјализираниот TrOCR_Math_handwritten
-# модел, кој враќа LaTeX наместо обичен ASCII израз). Не користиме
-# latex2sympy2 - пакетот е скршен на овој систем (antlr4 верзиски конфликт) -
-# затоа рачно ги нормализираме најчестите LaTeX конструкции за основна
-# алгебра, а остатокот минува низ normalize_text() како и обично.
-# ---------------------------------------------------------------------------
 
 _FRAC_RE = re.compile(r"\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
 _SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]*)\}")
 _BRACED_POWER_RE = re.compile(r"\^\s*\{([^{}]*)\}")
 _SUBSCRIPT_RE = re.compile(r"_\s*\{?[^{}\s]*\}?")  # индекси - ги отфрламе (вон опфат)
 
-# "Козметички" LaTeX wrapper-команди - апликацијата никогаш не поддржува
-# нивното значење (стил на буква, множество, хоризонтална линија итн.),
-# па секое појавување е гарантирано OCR артефакт. Два реални забележани
-# случаи: \overline{x+y-7;x-y=1} (систем равенки) и \mathbb{x^3-...=0}
-# (кубна равенка) - истиот образец \команда{содржина}, само содржината
-# е важна, wrapper-от се фрла. Само "одвиткуваме" (не бришеме) - за
-# разлика од matrix-случајот, тука нема познат структурен образец за
-# реконструкција на изгубени карактери.
+
 _TEXT_WRAPPER_RE = re.compile(
     r"\\(?:overline|underline|mathbb|mathrm|mathit|mathcal|boldsymbol|text|hat|vec|bar)"
     r"\s*\{([^{}]*)\}"
 )
 
-# \begin{matrix}...\end{matrix} (и pmatrix/bmatrix/array итн.) - моделот
-# понекогаш "гледа" вишок ред (пр. линија од хартијата, сенка) и го враќа
-# изразот завиткан во multi-row конструкција. За основна алгебра земаме
-# само единствениот непразен ред.
+
 _ENV_RE = re.compile(r"\\(?:begin|end)\{[a-zA-Z*]+\}(?:\{[^{}]*\})?")
 
 
 def _reconstruct_matrix_row_as_subtraction(row: str) -> str:
-    """Оваа апликација НИКОГАШ не поддржува матрици/linear algebra - секој
-    \\begin{matrix} излез од моделот е гарантирано халуцинација, никогаш
-    намерен внес. Емпириски утврден повторлив образец (3+ реални случаи):
-    моделот го "гледа" минус знакот (-) како колонски разделувач (&)
-    наместо оператор - пр. "4-3" -> матрица со колони "4" и "3", или
-    "10-4" -> колони "10" и "-4". Го реконструираме минусот автоматски
-    наместо да бараме рачна поправка секој пат."""
+
     if "&" not in row:
         return row
     cells = [c.strip() for c in row.split("&") if c.strip()]
@@ -121,19 +77,7 @@ _BARE_NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?$")
 
 
 def _resolve_fraction_hallucination(numerator: str, denominator: str) -> str | None:
-    """Друг повторлив, документиран образец на дропка-халуцинација (5+
-    реални случаи): моделот "дуплира" еден операнд како именител/броител
-    на измислена дропка - "5+5" -> \\frac{5+5}{5}, "1+1" -> \\frac{1}{1+1},
-    "10+4" -> \\frac{10+4}{4}, "1+2" -> \\frac{1+2}{2}. Секогаш едната
-    страна е гол број кој веќе се јавува како операнд во другата страна
-    (која содржи оператор).
 
-    Строго ограничено на ЧИСТА аритметика (без букви/променливи) за да
-    не ги допре легитимните алгебарски дропки (пр. "(x+2)/2" НЕ се
-    допира бидејќи "x" е буква).
-
-    Враќа ја "вистинската" страна самостојно ако е препознаен образецот,
-    инаку None (третирај го како вистинска дропка)."""
     if re.search(r"[a-zA-Z]", numerator) or re.search(r"[a-zA-Z]", denominator):
         return None
 
@@ -177,9 +121,7 @@ _LATEX_REPLACEMENTS = {
 
 
 def _read_group(text: str, i: int):
-    """Ако на позиција i (по празни места) почнува "{...}", враќа
-    (содржина, позиција-по-затворената-заграда) со правилно броење на
-    вгнездени загради, инаку None."""
+
     while i < len(text) and text[i] == " ":
         i += 1
     if i >= len(text) or text[i] != "{":
@@ -192,7 +134,7 @@ def _read_group(text: str, i: int):
             depth -= 1
             if depth == 0:
                 return text[i + 1 : j], j + 1
-    return None  # незатворена заграда
+    return None
 
 
 def _convert_frac_sqrt(text: str) -> str:
@@ -221,19 +163,15 @@ def _convert_frac_sqrt(text: str) -> str:
 
 
 def _convert_integral(text: str) -> str:
-    """\\int f dx -> integrate(f,x). Модели го препознаваат неопределениот
-    интеграл од слика (пр. \\int \\frac{dx}{\\sqrt{...}}), а нашиот парсер
-    очекува integrate(израз,x). Само неопределени интеграли (без граници)."""
+
     if not text.lstrip().startswith("\\int"):
         return text
     body = re.sub(r"\s+", "", text.lstrip()[4:])
 
-    # \int \frac{dx}{g}  ->  (dx)/(g)  =>  integrate(1/(g), x)
     m = re.fullmatch(r"\(d([a-z])\)/\((.+)\)", body)
     if m:
         return f"integrate(1/({m.group(2)}),{m.group(1)})"
 
-    # \int f dx  =>  integrate(f, x)
     m = re.fullmatch(r"(.+?)d([a-z])", body)
     if m:
         return f"integrate({m.group(1)},{m.group(2)})"
@@ -241,8 +179,7 @@ def _convert_integral(text: str) -> str:
 
 
 def latex_to_plain(latex: str) -> str:
-    """Претвора (основен подмножество) LaTeX во ASCII израз што
-    normalize_text()/parse_expr() можат да го разберат."""
+
     text = latex.strip()
     text = _strip_matrix_rows(text)
     prev = None
@@ -250,19 +187,10 @@ def latex_to_plain(latex: str) -> str:
         prev = text
         text = _TEXT_WRAPPER_RE.sub(r"\1", text)
 
-    # \frac{a}{b} -> (a)/(b) и \sqrt{a} -> sqrt(a), со поддршка за
-    # вгнездување (пр. \frac{dx}{\sqrt{1-x}}) - броиме загради наместо regex.
     text = _convert_frac_sqrt(text)
 
-    # Напишан знак "^" (пр. "x^2" како буквален текст) моделот го чита како
-    # LaTeX \wedge (симболот ∧ изгледа исто) - или "^{\wedge}2", или
-    # "\wedge 2". Реален случај: "diff(x^2,x)" -> "diff(x^{\wedge}2,x)".
     text = re.sub(r"\^\s*\{\s*\\wedge\s*\}", "^", text)
     text = text.replace("\\wedge", "^")
-
-    # Истиот проблем, друга форма: буквален "^" се чита како подигната "1" -
-    # "x^3" -> "x^{1}3". Степен 1 директно пред цифра е бесмислен ("x^1*3"
-    # никој не го пишува така), па е сигурно "^" што го прочитал како 1.
     text = re.sub(r"\^\s*\{\s*1\s*\}(?=\d)", "^", text)
 
     text = _SQRT_RE.sub(r"sqrt(\1)", text)
@@ -276,10 +204,6 @@ def latex_to_plain(latex: str) -> str:
 
     text = _convert_integral(text)
 
-    # Safety net: секој преостанат "\" (пр. непозната LaTeX команда што
-    # ја нема во _LATEX_REPLACEMENTS, или "\_" остаток по SUBSCRIPT_RE)
-    # никогаш не е валиден во финалниот ASCII израз - отстрани го самиот
-    # backslash (не и текстот околу него, пр. "\alpha" -> "alpha").
     text = text.replace("\\", "")
 
     return text
@@ -289,63 +213,39 @@ def latex_to_plain(latex: str) -> str:
 class ParsedProblem:
     raw_text: str
     normalized_text: str
-    kind: str  # "equation" | "expression" | "derivative" | "integral" | "system"
-    sympy_obj: object  # Eq(...) / Expr / list[Eq] (за "system")
+    kind: str
+    sympy_obj: object
     variables: list = field(default_factory=list)
-    op_var: object = None  # Symbol - само за "derivative"/"integral" (по која променлива)
+    op_var: object = None
 
 
 def normalize_text(raw: str) -> str:
-    """Чисти суров текст (од OCR или рачен внес) во форма што SymPy
-    парсерот може да ја обработи."""
+
     text = raw.strip()
 
     for bad, good in _SYMBOL_REPLACEMENTS.items():
         text = text.replace(bad, good)
     text = _DECIMAL_COMMA_RE.sub(".", text)
 
-    # Отстрани празни места - "2 x + 3" -> "2x+3"
+
     text = "".join(text.split())
 
-    # Израз никогаш не почнува со "*" - остаток од \cdot/\times што моделот
-    # го "измислил" пред изразот (реален случај: "**diff(x^2,x)").
     text = text.lstrip("*")
 
-    # "1" (цифра) визуелно наликува на "i"/"l" (мало L) - чест OCR/
-    # ракописен misread, реален случај забележан во UI ("1+1" -> "i+1").
-    # Замени ги САМО кога не се дел од подолг збор (функција/променлива,
-    # пр. "sin", "diff", "integrate") - таму секое "i"/"l" е опкружено со
-    # други букви, па оваа замена никогаш не ги допира.
     text = re.sub(r"(?<![a-zA-Z])[il](?![a-zA-Z])", "1", text)
 
-    # sqrt без загради, пр. "sqrt9" -> "sqrt(9)" - чест случај кога OCR
-    # го изгуби заградата или корисникот ја испуштил
     text = re.sub(r"sqrt(\d+(\.\d+)?)", r"sqrt(\1)", text)
     text = re.sub(r"sqrt([a-zA-Z])(?!\()", r"sqrt(\1)", text)
 
-    # sin/cos/tan без загради, пр. "sin30" -> "sin(30)" - без ова SymPy
-    # ги дели буквите s,i,n како посебни променливи (implicit multiplication)
-    # наместо да ја препознае функцијата, реален случај забележан во UI.
     for _fn in ("sin", "cos", "tan"):
         text = re.sub(rf"{_fn}(\d+(\.\d+)?)", rf"{_fn}(\1)", text)
         text = re.sub(rf"{_fn}([a-zA-Z])(?!\()", rf"{_fn}(\1)", text)
 
-    # Отстрани trailing "..." - забележан артефакт кај handwriting моделот
-    # (генеративен модел понекогаш "продолжува" со точки на крајот наместо
-    # чисто да застане). Еден единствен trailing "." (децимала без остаток,
-    # пр. "5.") НЕ се допира - ретко и не вреди ризикот.
     text = re.sub(r"\.{2,}$", "", text)
 
     if not text:
         raise ParseError("Празен израз - нема што да се препознае/парсира.")
 
-    # Строга валидација - отфрли какви било карактери надвор од очекуваната
-    # математичка азбука ПРЕД да стигне до parse_expr(). Ова е важно бидејќи
-    # sympy/Python инаку "тивко" би прифатил невалидни карактери како
-    # валидни оператори (пр. "&" = bitwise-AND во Python) и би пресметал
-    # лажно веродостоен, но целосно погрешен резултат наместо грешка -
-    # реален случај забележан од (недоволно исчистен) LaTeX излез од
-    # handwriting моделот кога содржи стрски matrix-артефакти ("&").
     if not _ALLOWED_CHARS_RE.fullmatch(text):
         bad_chars = sorted(set(re.sub(r"[0-9a-zA-Z+\-*/^.,=()<>;]", "", text)))
         raise ParseError(
@@ -360,12 +260,7 @@ _TRIG_FUNCS = (sin, cos, tan)
 
 
 def _degrees_to_radians_in_trig(expr):
-    """sin(30) во школски контекст значи 30°, не 30 радијани (SymPy
-    default). Конвертираме sin/cos/tan САМО кога аргументот е чист број
-    БЕЗ pi во него (пр. sin(30) -> sin(30°), но sin(pi/6) си останува
-    радијани - експлицитноे бара корисникот со pi). Симболични аргументи
-    (пр. sin(x) во извод/интеграл) НЕ се допираат - таму мора радијани
-    за да важат стандардните правила за изводи/интеграли."""
+
     replacements = {}
     for func in _TRIG_FUNCS:
         for node in expr.atoms(func):
@@ -376,9 +271,7 @@ def _degrees_to_radians_in_trig(expr):
 
 
 def _safe_parse_expr(text: str):
-    """parse_expr() со единствено, конзистентно фаќање грешки - секое
-    "смет" (garbage) влезно парче (од OCR или рачен внес) станува чист
-    ParseError, никогаш необработен crash."""
+
     try:
         expr = parse_expr(text, transformations=_TRANSFORMATIONS)
         return _degrees_to_radians_in_trig(expr)
@@ -463,13 +356,7 @@ def _parse_system(raw_text: str, normalized: str) -> ParsedProblem:
 
 
 def parse(raw_text: str) -> ParsedProblem:
-    """
-    Главна функција: суров текст -> ParsedProblem со sympy објект.
 
-    Поддржува равенки ("2x+3=11"), обични изрази за симплификација
-    ("2x+3(x-1)"), деривати ("diff(x^2+3x,x)"), интеграли
-    ("integrate(x^2,x)") и системи равенки ("x+y=5;x-y=1").
-    """
     normalized = normalize_text(raw_text)
 
     if ";" in normalized:
@@ -490,9 +377,7 @@ def parse(raw_text: str) -> ParsedProblem:
 
 
 def parse_latex(latex: str) -> ParsedProblem:
-    """Convenience: LaTeX израз (пр. излез од TrOCR_Math_handwritten) ->
-    ParsedProblem. За raw_text го чуваме оригиналниот LaTeX (не plain
-    верзијата) за да остане видливо што точно препознал моделот."""
+
     plain = latex_to_plain(latex)
     parsed = parse(plain)
     return ParsedProblem(

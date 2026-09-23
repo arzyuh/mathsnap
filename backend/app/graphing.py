@@ -1,18 +1,11 @@
-"""
-Графички модул - генерира PNG график за визуелизација на проблемот
-(точка "Анимации и интерактивни графици" од фичерите).
 
-Ова е серверски-рендериран статичен PNG (со matplotlib), не
-интерактивен graph - за интерактивност би требало frontend
-JS библиотека (пр. Plotly.js/D3), што е надвор од опфатот на MVP.
-"""
 from __future__ import annotations
 
 import io
 
 import matplotlib
 
-matplotlib.use("Agg")  # без GUI backend - работиме на сервер
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import sympy
@@ -61,15 +54,13 @@ def render_single_expression(expr, var: Symbol) -> bytes:
 
 
 def render_equation_with_roots(lhs, rhs, var: Symbol, roots: list) -> bytes:
-    """График каде се црта левата и десната страна на равенката, со
-    пресеците (решенијата) означени - визуелно "зошто е тоа решението"."""
+
     f_lhs = _lambdify_safe(lhs, var)
     f_rhs = _lambdify_safe(rhs, var)
     xs = np.linspace(*_X_RANGE, _SAMPLES)
 
     def _eval(f, xs):
-        # lambdify на constant-израз (без var) враќа скалар наместо низа -
-        # рачно го "рашируваме" до должината на xs
+
         y = f(xs)
         return np.broadcast_to(np.asarray(y, dtype=float), xs.shape).copy()
 
@@ -85,7 +76,7 @@ def render_equation_with_roots(lhs, rhs, var: Symbol, roots: list) -> bytes:
         try:
             rf = float(r)
         except (TypeError, ValueError):
-            continue  # комплексно решение - не се црта на реална рамнина
+            continue
         yf = float(f_lhs(rf))
         ax.plot(rf, yf, "o", color="#16a34a", markersize=8, zorder=5)
         ax.annotate(f"x={rf:.3g}", (rf, yf), textcoords="offset points", xytext=(6, 6))
@@ -97,18 +88,14 @@ def render_equation_with_roots(lhs, rhs, var: Symbol, roots: list) -> bytes:
 
 
 def build_graph(parsed: ParsedProblem, solve_result: dict) -> bytes | None:
-    """Централна функција - одлучува дали и како да се исцрта график
-    за дадениот проблем. Враќа None ако проблемот не е погоден за
-    графички приказ (пр. повеќе од една непозната)."""
+
     try:
         if parsed.kind in ("expression", "derivative", "integral") and len(parsed.variables) == 1:
             return render_single_expression(parsed.sympy_obj, parsed.variables[0])
 
         if parsed.kind == "equation" and len(parsed.variables) == 1:
             var = parsed.variables[0]
-            # земи ги нумеричките решенија директно преку sympy.solve
-            # (поедноставно и посигурно отколку да се парсира текстот
-            # од веќе генерираните чекори)
+
             try:
                 roots = sympy.solve(parsed.sympy_obj, var)
             except Exception:
@@ -117,7 +104,6 @@ def build_graph(parsed: ParsedProblem, solve_result: dict) -> bytes | None:
                 parsed.sympy_obj.lhs, parsed.sympy_obj.rhs, var, roots
             )
     except Exception:
-        # Графикот е "убава екстра", никогаш не смее да го собори solve-от
         return None
 
     return None

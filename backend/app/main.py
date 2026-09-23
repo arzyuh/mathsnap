@@ -1,14 +1,4 @@
-"""
-FastAPI backend - го поврзува целиот pipeline:
 
-  слика (upload) --OCR--> суров текст
-  текст (OCR или рачен внес) --parser--> sympy објект
-  sympy објект --solver/steps--> чекори + резултат
-  sympy објект --graphing--> PNG график (опционално)
-
-Стартување (од backend/ папката):
-    uvicorn app.main:app --reload --port 8000
-"""
 from __future__ import annotations
 
 import logging
@@ -32,15 +22,13 @@ app = FastAPI(title="MathSnap API", version="0.2.0")
 
 @app.on_event("startup")
 def _warm_up_ocr_model() -> None:
-    """EasyOCR-от вчитува тежини од дискот при прв повик (~2s) - го
-    правиме тоа во background thread при стартување на серверот, за
-    првиот корисник (пр. прв frame од live камерата) да не чека."""
+
 
     def _load():
         try:
             ocr.get_reader()
         except Exception:
-            pass  # ако не успее, extract_text() сепак ќе падне на Tesseract
+            pass
 
     threading.Thread(target=_load, daemon=True).start()
 
@@ -95,8 +83,7 @@ def _solve_payload(raw_text: str) -> dict:
 
 @app.post("/api/solve")
 def solve_endpoint(req: SolveRequest) -> dict:
-    """Прима текст (од рачен внес или веќе-препознаен OCR текст) и враќа
-    чекор-по-чекор решение."""
+
     if not req.input or not req.input.strip():
         raise HTTPException(status_code=422, detail="Празен внес.")
     return _solve_payload(req.input)
@@ -104,7 +91,7 @@ def solve_endpoint(req: SolveRequest) -> dict:
 
 @app.post("/api/ocr", response_model=OcrResponse)
 async def ocr_endpoint(file: UploadFile = File(...)) -> OcrResponse:
-    """Прима слика, ја преработува со OpenCV и препознава текст со Tesseract."""
+
     content_type = file.content_type or ""
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="Датотеката мора да биде слика.")
@@ -115,7 +102,7 @@ async def ocr_endpoint(file: UploadFile = File(...)) -> OcrResponse:
 
     try:
         raw_text = ocr.extract_text(image_bytes)
-    except Exception as exc:  # OpenCV/Tesseract runtime грешки
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=f"OCR грешка: {exc}") from exc
 
     ocr_logger.info("OCR raw_text=%r", raw_text)
@@ -136,10 +123,7 @@ async def ocr_endpoint(file: UploadFile = File(...)) -> OcrResponse:
 
 @app.post("/api/ocr-accurate", response_model=OcrResponse)
 async def ocr_accurate_endpoint(file: UploadFile = File(...)) -> OcrResponse:
-    """Иста намена како /api/ocr, но преку точниот ракописен модел (без
-    веднаш да решава) - за да можеш да го провериш/поправиш препознаениот
-    текст пред да се реши (моделот не е 100% точен - пр. знае да "види"
-    дропка таму каде нема, ~78% совршена точност)."""
+
     content_type = file.content_type or ""
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="Датотеката мора да биде слика.")
@@ -154,17 +138,10 @@ async def ocr_accurate_endpoint(file: UploadFile = File(...)) -> OcrResponse:
         try:
             normalized = parse_latex(latex).normalized_text
         except ParseError:
-            # Целосно парсирање не успеа (пр. халуцинирана структура што
-            # нашите heuristics не ја препознаа) - сепак врати ја БАРЕМ
-            # делумно исчистената верзија (latex_to_plain), не сирoв LaTeX.
-            # Важно: ова normalized_text го користи и live-scan флоуto
-            # директно кон /api/solve (кое очекува веќе-чист текст, не
-            # LaTeX) - сирoв LaTeX таму секогаш пропаѓа со "непрепознаени
-            # карактери (\_{})" наместо разбирлива грешка (реален случај).
+
             normalized = latex_to_plain(latex)
         return OcrResponse(raw_text=latex, normalized_text=normalized)
 
-    # Fallback: сервисот не работи - падни назад на EasyOCR
     try:
         raw_text = ocr.extract_text(image_bytes)
     except Exception as exc:
@@ -186,7 +163,7 @@ async def ocr_accurate_endpoint(file: UploadFile = File(...)) -> OcrResponse:
 
 @app.post("/api/ocr-and-solve")
 async def ocr_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
-    """Комбиниран endpoint: слика -> OCR -> решение, во еден повик."""
+
     content_type = file.content_type or ""
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="Датотеката мора да биде слика.")
@@ -208,16 +185,7 @@ async def ocr_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
 
 @app.post("/api/ocr-accurate-and-solve")
 async def ocr_accurate_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
-    """
-    "Точна" верзија на /api/ocr-and-solve - користи го специјализираниот
-    ракописен модел (backend/handwriting_service/, посебен процес) наместо
-    EasyOCR. Побавно (~3-6s), но значително подобро на ракопис - затоа
-    се користи само за финалното снимање (рачно копче / стабилизирано
-    live скенирање), не за секој live preview frame.
 
-    Ако сервисот не работи, автоматски паѓа назад на EasyOCR
-    (истото однесување како /api/ocr-and-solve).
-    """
     content_type = file.content_type or ""
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="Датотеката мора да биде слика.")
@@ -229,14 +197,7 @@ async def ocr_accurate_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
     latex = ocr.recognize_handwriting_accurate(image_bytes)
 
     if latex is not None:
-        # Сервисот е достапен и врати НЕШТО - дури и ако не успее целосно
-        # да се парсира, ПОДОБРО е да му го покажеме на корисникот точно
-        # што "прочита" моделот (за да го поправи во correction полето)
-        # отколку тивко да префрлиме на EasyOCR, кој на ракопис е послаб
-        # и може да "прочита" нешто сосема друго - лажно веродостоен, но
-        # погрешен резултат без никаква назнака дека нешто тргнало наопаку
-        # (реален случај: "6+6" -> модел даде "6+6..." -> не парсира ->
-        # стар код тивко падна на EasyOCR -> прочита "aa" -> "решение" a²).
+
         ocr_logger.info("Handwriting service latex=%r", latex)
         try:
             parsed = parse_latex(latex)
@@ -250,7 +211,6 @@ async def ocr_accurate_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
             )
         return _solve_payload_from_parsed(parsed)
 
-    # Fallback: ракописниот сервис воопшто не работи (down/недостапен)
     try:
         raw_text = ocr.extract_text(image_bytes)
     except Exception as exc:
@@ -267,7 +227,6 @@ async def ocr_accurate_and_solve_endpoint(file: UploadFile = File(...)) -> dict:
 
 @app.get("/api/graph.png")
 def graph_endpoint(expr: str) -> Response:
-    """Враќа PNG график за дадениот израз/равенка (query param `expr`)."""
     try:
         parsed = parse(expr)
     except ParseError as exc:
@@ -287,8 +246,6 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-# Сервирање на frontend-от (статични HTML/CSS/JS) директно преку истиот сервер,
-# за да нема потреба од посебен frontend сервер во MVP.
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 if _FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")

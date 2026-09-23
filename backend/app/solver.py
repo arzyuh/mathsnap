@@ -1,11 +1,4 @@
-"""
-Orchestrator - го зема испарсираниот проблем (ParsedProblem), го
-класифицира по тип, и повикува соодветен "narrator" од steps.py за
-да произведе еден или повеќе методи со чекори.
 
-Ова е местото каде се одлучува "неколку методи на решавање" -
-точка 4 од фичерите на Photomath.
-"""
 from __future__ import annotations
 
 import sympy
@@ -31,9 +24,7 @@ class UnsupportedProblem(Exception):
 
 
 def _fallback_generic_solve(parsed: ParsedProblem) -> Method:
-    """Кога проблемот е надвор од опфатот со детални чекори (пр. повисок
-    степен, повеќе непознати), сепак пробај со чист SymPy solve/simplify,
-    без наратив - подобро отколку целосно да откаже."""
+
     method = Method(name="Општо решение (SymPy)")
     if parsed.kind == "equation":
         var = parsed.variables[0] if parsed.variables else None
@@ -67,8 +58,6 @@ def _solve_system(parsed: ParsedProblem) -> dict:
         result["methods"] = [solve_linear_system_2x2(equations[0], equations[1], var1, var2)]
         return result
 
-    # Посложи системи (повеќе од 2 равенки/непознати) - вон опфат за
-    # детален наратив, но сепак пробај со чист SymPy solve
     method = Method(name="Општо решение на систем (SymPy)")
     for i, eq in enumerate(equations):
         method.add(f"Равенка {i + 1}", eq)
@@ -88,17 +77,7 @@ def _solve_system(parsed: ParsedProblem) -> dict:
 
 
 def solve(parsed: ParsedProblem) -> dict:
-    """
-    Враќа речник:
-    {
-        "kind": "equation" | "expression" | "derivative" | "integral" | "system",
-        "problem_type": "linear" | "quadratic" | "higher_degree" | "trigonometric"
-                        | "simplify" | "derivative" | "integral" | "system" | "general",
-        "variable": "x" | None,
-        "methods": [Method, ...],
-        "graphable": bool,
-    }
-    """
+
     result = {
         "kind": parsed.kind,
         "problem_type": "general",
@@ -127,17 +106,15 @@ def solve(parsed: ParsedProblem) -> dict:
     if parsed.kind == "system":
         return _solve_system(parsed)
 
-    # kind == "equation"
+
     if len(parsed.variables) != 1:
-        # 0 непознати (пр. "2+2=4") или повеќе непознати без ";" - вон опфат
+
         result["methods"] = [_fallback_generic_solve(parsed)]
         return result
 
     var = parsed.variables[0]
     result["variable"] = str(var)
 
-    # Тригонометриска равенка (sin/cos/tan) - Poly() би фрлил
-    # PolynomialError бидејќи тоа не е полином во var
     trig_method = solve_basic_trig_equation(parsed.sympy_obj, var)
     if trig_method is not None:
         result["problem_type"] = "trigonometric"

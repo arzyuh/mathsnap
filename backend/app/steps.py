@@ -1,14 +1,4 @@
-"""
-Rule-based "narrator" за чекор-по-чекор решавање.
 
-SymPy знае да го реши изразот, но не објаснува КАКО. Овој модул го
-става тој наратив: секој метод произведува листа од Step-ови
-(објаснување + меѓу-резултат), исто како што Photomath прикажува
-"1. Растави ги заградите, 2. Пренеси членови..." итн.
-
-Опфат (согласно договорениот MVP scope): линеарни равенки, квадратни
-равенки (2 методи: факторизација + формула) и симплификација на изрази.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -38,9 +28,6 @@ def _lx(expr) -> str:
     return latex(expr)
 
 
-# ---------------------------------------------------------------------------
-# Линеарни равенки: ax + b = 0  (degree 1)
-# ---------------------------------------------------------------------------
 
 def solve_linear_equation(eq: Eq, var: Symbol) -> Method:
     method = Method(name="Линеарна равенка - изолирање на непознатата")
@@ -54,9 +41,9 @@ def solve_linear_equation(eq: Eq, var: Symbol) -> Method:
 
     moved = expand(expanded_lhs - expanded_rhs)
     poly = Poly(moved, var)
-    coeffs = poly.all_coeffs()  # [a, b] подредени од највисок кон најнизок степен
+    coeffs = poly.all_coeffs()
     while len(coeffs) < 2:
-        coeffs.insert(0, 0)  # пополни ги повисоките (отсутни) степени со 0
+        coeffs.insert(0, 0)
     a, b = coeffs
 
     method.add(
@@ -87,10 +74,6 @@ def solve_linear_equation(eq: Eq, var: Symbol) -> Method:
     return method
 
 
-# ---------------------------------------------------------------------------
-# Квадратни равенки: ax^2 + bx + c = 0  (degree 2)
-# ---------------------------------------------------------------------------
-
 def _quadratic_coeffs(eq: Eq, var: Symbol):
     moved = expand(eq.lhs - eq.rhs)
     poly = Poly(moved, var)
@@ -102,15 +85,11 @@ def _quadratic_coeffs(eq: Eq, var: Symbol):
 
 
 def solve_polynomial_factoring(eq: Eq, var: Symbol) -> Method | None:
-    """Обидува се да ја реши со факторизација - работи за КОЈ БИЛО степен
-    (квадратна, кубна, квартична...), не само квадратни. Враќа None ако
-    изразот не се факторизира убаво над рационални броеви (тогаш нема
-    смисла да се нуди овој метод на корисникот)."""
     moved = expand(eq.lhs - eq.rhs)
 
     factored = factor(moved)
     if factored == moved or not factored.is_Mul:
-        return None  # не се факторизира убаво - прескокни го методот
+        return None
 
     method = Method(name="Факторизација")
     method.add("Почетна равенка", eq)
@@ -190,10 +169,7 @@ def solve_quadratic_formula(eq: Eq, var: Symbol) -> Method:
 
 
 def solve_polynomial_general_roots(eq: Eq, var: Symbol, degree: int) -> Method:
-    """Fallback за равенки со степен >=3 кои не се факторизираат убаво -
-    чекор-по-чекор извод на формула за кубни/квартични равенки е вон
-    опфатот на овој MVP (многу комплексно), затоа ги прикажуваме сите
-    корени (реални и комплексни) директно преку SymPy solve()."""
+
     moved = expand(eq.lhs - eq.rhs)
 
     method = Method(name=f"Општо решение (степен {degree})")
@@ -217,9 +193,6 @@ def solve_polynomial_general_roots(eq: Eq, var: Symbol, degree: int) -> Method:
     return method
 
 
-# ---------------------------------------------------------------------------
-# Симплификација на обични изрази (без "=")
-# ---------------------------------------------------------------------------
 
 def simplify_expression_steps(expr) -> Method:
     method = Method(name="Симплификација")
@@ -238,10 +211,6 @@ def simplify_expression_steps(expr) -> Method:
     return method
 
 
-# ---------------------------------------------------------------------------
-# Деривати: diff(израз, променлива)
-# ---------------------------------------------------------------------------
-
 _KNOWN_DERIVATIVES = {
     sympy.sin: (lambda a: sympy.cos(a), "d/dx[sin(x)] = cos(x)"),
     sympy.cos: (lambda a: -sympy.sin(a), "d/dx[cos(x)] = -sin(x)"),
@@ -253,10 +222,7 @@ _KNOWN_DERIVATIVES = {
 
 
 def _differentiate_term(term, var: Symbol):
-    """Врaќа (име_на_правило, изведен_член). Ги покрива честите
-    учебнички случаи (степен, познати функции); за сè посложено
-    (chain rule) паѓа на директен sympy.diff (сепак точно, само без
-    детален меѓучекор)."""
+
     if var not in term.free_symbols:
         return "Изводот на константа е 0", sympy.Integer(0)
 
@@ -302,9 +268,6 @@ def differentiate_steps(expr, var: Symbol) -> Method:
     return method
 
 
-# ---------------------------------------------------------------------------
-# Интеграли: integrate(израз, променлива)
-# ---------------------------------------------------------------------------
 
 _KNOWN_INTEGRALS = {
     sympy.sin: (lambda a: -sympy.cos(a), "∫sin(x) dx = -cos(x)"),
@@ -360,19 +323,15 @@ def integrate_steps(expr, var: Symbol) -> Method:
     return method
 
 
-# ---------------------------------------------------------------------------
-# Системи од 2 линеарни равенки со 2 непознати (метод на замена)
-# ---------------------------------------------------------------------------
 
 def solve_linear_system_2x2(eq1: Eq, eq2: Eq, var1: Symbol, var2: Symbol) -> Method:
     method = Method(name="Систем равенки - метод на замена")
     method.add("Прва равенка", eq1)
     method.add("Втора равенка", eq2)
 
-    # Изрази var1 преку var2 од првата равенка
     expr_var1 = sympy.solve(eq1, var1)
     if not expr_var1:
-        # var1 го нема во првата равенка - пробај со втората
+
         eq1, eq2 = eq2, eq1
         expr_var1 = sympy.solve(eq1, var1)
     expr_var1 = expr_var1[0]
@@ -399,14 +358,9 @@ def solve_linear_system_2x2(eq1: Eq, eq2: Eq, var1: Symbol, var2: Symbol) -> Met
     return method
 
 
-# ---------------------------------------------------------------------------
-# Основни тригонометриски равенки: sin(x)=a, cos(x)=a, tan(x)=a
-# ---------------------------------------------------------------------------
 
 def solve_basic_trig_equation(eq: Eq, var: Symbol) -> Method | None:
-    """Препознава равенки од обликот sin(x)=a / cos(x)=a / tan(x)=a
-    (по преместување на сите членови). Враќа None ако равенката не е
-    од овој едноставен облик (тогаш го користи општото solve()-падобран)."""
+
     moved = expand(eq.lhs - eq.rhs)
     trig_terms = [t for t in moved.atoms(sympy.sin, sympy.cos, sympy.tan) if var in t.free_symbols]
     if len(trig_terms) != 1:
@@ -414,9 +368,9 @@ def solve_basic_trig_equation(eq: Eq, var: Symbol) -> Method | None:
 
     trig_term = trig_terms[0]
     if trig_term.args[0] != var:
-        return None  # посложен аргумент (пр. sin(2x)) - вон опфат на MVP
+        return None
 
-    rest = simplify(moved - trig_term)  # moved = trig_term + rest = 0  =>  trig_term = -rest
+    rest = simplify(moved - trig_term)  
     rhs_value = simplify(-rest)
 
     method = Method(name="Тригонометриска равенка")

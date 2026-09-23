@@ -4,12 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>MathSnap</title>
-<!-- ВАЖНО: и на style.css И на app.js - секогаш ИСТ ?v=N, зголемен при
-     СЕКОЈА промена на кој било од двата (дури и ако само едниот е
-     сменет) - browser-от агресивно кешира статични фајлови; заборавен
-     bump на само еден од нив = корисникот гледа стара верзија без
-     никаква грешка (реален случај - style.css заглави на v=2 низ
-     неколку дизајн-commit-и додека app.js се бидуваше редовно). -->
+
 <link rel="stylesheet" href="style.css?v=8" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -25,14 +20,14 @@
   </nav>
 
   <main>
-    <!-- ============ SCAN TAB ============ -->
+    
     <section id="tab-scan" class="tab-panel active">
       <div class="scan-mode-toggle">
         <button id="mode-live-btn" class="mode-btn active">🎥 Live камера</button>
         <button id="mode-upload-btn" class="mode-btn">🖼️ Прикачи слика</button>
       </div>
 
-      <!-- ---- Live camera mode ---- -->
+     
       <div id="live-mode" class="card">
         <div class="video-wrap">
           <video id="camera-video" autoplay playsinline muted></video>
@@ -47,7 +42,7 @@
         <canvas id="capture-canvas" hidden></canvas>
       </div>
 
-      <!-- ---- Upload photo mode ---- -->
+    
       <div id="upload-mode" class="card" hidden>
         <label class="file-drop" for="image-input">
           <span id="drop-label">📷 Прикачи</span>
@@ -65,7 +60,7 @@
       </div>
     </section>
 
-    <!-- ============ CALC TAB ============ -->
+  
     <section id="tab-calc" class="tab-panel">
       <div class="card">
         <input id="calc-input" type="text" class="text-input calc-display" placeholder="пр. 2x + 3 = 11" />
@@ -92,7 +87,7 @@
       </div>
     </section>
 
-    <!-- ============ RESULTS ============ -->
+   
     <section id="results" hidden>
       <div class="card result-card">
         <h2>Резултат</h2>

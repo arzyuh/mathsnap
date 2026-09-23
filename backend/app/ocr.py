@@ -1,20 +1,3 @@
-"""
-OCR модул - препознавање на математички изрази од слика.
-
-Главен engine: **EasyOCR** (deep learning, CRAFT детекција + CRNN
-препознавање). Тестирано директно наспроти Tesseract на исти слики -
-EasyOCR значително подобро се справува со фотографии од камера
-(ракопис, различни агли/осветлување), додека Tesseract е тренирана
-првенствено за скенирани документи со чист печатен текст.
-
-Tesseract останува достапна како лесна fallback опција (`extract_text_tesseract`)
-ако EasyOCR моделот не е достапен на системот.
-
-Важно: EasyOCR работи многу подобро на слабо-преработена (grayscale)
-слика отколку на агресивно бинаризирана - тестирано: 99% confidence на
-grayscale наспроти 37% на adaptive-threshold бинарна слика. Затоа
-preprocessing-от овде е намерно "лесен" (без threshold/бинаризација).
-"""
 from __future__ import annotations
 
 import logging
@@ -29,20 +12,11 @@ import pytesseract
 
 logger = logging.getLogger(__name__)
 
-# Адреса на посебниот "точен" ракописен сервис (види
-# backend/handwriting_service/server.py - работи во сопствено venv
-# поради incompatibility на checkpoint-от со главната transformers верзија
-# на локалниот Windows dev setup).
+
 HANDWRITING_SERVICE_URL = "http://127.0.0.1:8001/recognize"
 HANDWRITING_SERVICE_TIMEOUT_S = 20
 HANDWRITING_MODEL_NAME = "fhswf/TrOCR_Math_handwritten"
 
-# "http" (default) - повикува посебен сервис преку мрежа, како во
-# локалниот Windows dev setup (два venv-а поради version конфликт).
-# "inprocess" - го вчитува моделот директно во истиот процес/venv -
-# користи се во Docker deployment (HF Spaces) каде инсталираме
-# compatible transformers==4.46.0 + torch==2.5.1 во ЕДЕН environment
-# (потврдено: EasyOCR не бара transformers воопшто, па нема конфликт).
 HANDWRITING_MODE = os.environ.get("HANDWRITING_MODE", "http")
 
 _handwriting_processor = None
@@ -64,19 +38,13 @@ def _get_inprocess_handwriting_model():
                 logger.info("Ракописниот модел е вчитан.")
     return _handwriting_processor, _handwriting_model
 
-# Дозволени карактери - го ограничува просторот на препознавање само на
-# симболи релевантни за математички изрази (го намалува бројот на грешки).
-# "i" и "o" се потребни за sin/cos (без нив EasyOCR не може да ги напише
-# тие функции воопшто - "sin30" излегуваше како "s1n30"). Заградите []{}
-# се намерно исклучени: parser-от ги одбива, а EasyOCR со нив често го
-# меша "+" со "{" (реален случај: "1+1" -> "1{1").
 MATH_CHAR_ALLOWLIST = (
     "0123456789"
     "xyzXYZabcinopqrst"
     "+-*/=().,^"
     "<>"
 )
-MATH_CHAR_WHITELIST = MATH_CHAR_ALLOWLIST  # алиас, користен од Tesseract патеката
+MATH_CHAR_WHITELIST = MATH_CHAR_ALLOWLIST
 
 TESSERACT_CONFIG_SINGLE_LINE = (
     f'--psm 7 --oem 3 -c tessedit_char_whitelist="{MATH_CHAR_WHITELIST}"'
@@ -90,9 +58,6 @@ _reader = None  # lazy singleton - иницијализацијата трае ~
 
 
 def get_reader():
-    """Lazy singleton за EasyOCR Reader (thread-safe). Иницијализацијата
-    (вчитување на моделот) трае неколку секунди - затоа се прави само
-    еднаш, идеално загреана при стартување на серверот (види main.py)."""
     global _reader
     if _reader is None:
         with _reader_lock:
@@ -104,7 +69,6 @@ def get_reader():
 
 
 def _decode_image(image_bytes: bytes) -> np.ndarray:
-    """Декодира bytes (пр. од upload) во OpenCV BGR слика."""
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
@@ -113,9 +77,7 @@ def _decode_image(image_bytes: bytes) -> np.ndarray:
 
 
 def _remove_ruled_lines(gray: np.ndarray) -> np.ndarray:
-    """Отстранува долги хоризонтални линии (пр. тетратка на линии) кои
-    можат да го измешаат OCR-от. Детектира со морфолошко отворање со
-    широк хоризонтален kernel, потоа ги "избришува" (бои во бело)."""
+
     inv = cv2.bitwise_not(gray)
     _, binary = cv2.threshold(inv, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
@@ -130,22 +92,7 @@ def _remove_ruled_lines(gray: np.ndarray) -> np.ndarray:
 
 
 def crop_to_ink_content(image_bytes: bytes, padding_ratio: float = 0.25) -> bytes:
-    """
-    Автоматски исечи ја сликата само на регионот со мастило/ракопис,
-    отфрлувајќи ја позадината (соба, прсти, рабови на хартијата итн.).
 
-    ЗОШТО: handwriting моделот (ViT encoder, 384x384 вход) ја гледа
-    ЦЕЛАТА необработена фотографија од live камерата - кога изразот
-    зафаќа мал дел од кадарот, при намалување до 384x384 тој станува
-    ситен/неjасен, а вишок содржина (фрлеви, сенки, рабови) станува
-    релативно поизразена - забележано е дека тоа го "лаже" моделот да
-    халуцинира дропки/матрици таму каде ги нема (пр. "1+1" -> \\frac{1}{1+1}).
-    Приближувањето само на пишаниот дел значително го подобрува ова.
-
-    Ако не се детектира доволно содржина (пр. празна/нејасна слика),
-    ја враќа оригиналната слика непроменета - fail-safe, никогаш не
-    смее ова да го скрши препознавањето.
-    """
     try:
         img = _decode_image(image_bytes)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -155,13 +102,6 @@ def crop_to_ink_content(image_bytes: bytes, padding_ratio: float = 0.25) -> byte
         inv = cv2.bitwise_not(no_lines)
         _, binary = cv2.threshold(inv, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
 
-        # ВАЖНО: не смееме едноставно да земеме bounding box на СИТЕ
-        # ненулти пиксели - расфрлан позадински шум (сенки, текстура)
-        # честo допира до самите рабови на сликата и bounding box-от би
-        # опфатил речиси цела слика (тестирано - точно тоа се случуваше).
-        # Затоа: спој ги соседните потези во поголеми "blobs" (close),
-        # па земи ги само контурите доволно големи да бидат вистински
-        # ракопис (не изолирани точки шум).
         close_size = max(int(min(h_img, w_img) * 0.015), 4)
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
         cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=2)
@@ -181,9 +121,6 @@ def crop_to_ink_content(image_bytes: bytes, padding_ratio: float = 0.25) -> byte
         y2 = max(by + bh for bx, by, bw, bh in big_boxes)
         w, h = x2 - x, y2 - y
 
-        # Премногу мал регион (< 0.5% од сликата) - веројатно шум, не
-        # вистинска содржина, поризично е да се исече отколку да се
-        # остави како е
         if (w * h) < 0.005 * (w_img * h_img):
             return image_bytes
 
@@ -205,7 +142,7 @@ def crop_to_ink_content(image_bytes: bytes, padding_ratio: float = 0.25) -> byte
 
 
 def _deskew(gray: np.ndarray) -> np.ndarray:
-    """Исправа мало закривување (rotation) на текстот, ако постои."""
+
     thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
     coords = np.column_stack(np.where(thresh > 0))
     if coords.shape[0] < 20:
@@ -225,9 +162,7 @@ def _deskew(gray: np.ndarray) -> np.ndarray:
 
 
 def preprocess_for_easyocr(image_bytes: bytes) -> np.ndarray:
-    """Лесен preprocessing pipeline (БЕЗ бинаризација - таа му штети на
-    EasyOCR, види забелешка на врвот на фајлот): grayscale -> отстрани
-    линии од хартија -> исправи закривување -> зголеми ако е мала."""
+
     img = _decode_image(image_bytes)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     no_lines = _remove_ruled_lines(gray)
@@ -242,8 +177,7 @@ def preprocess_for_easyocr(image_bytes: bytes) -> np.ndarray:
 
 
 def preprocess_image(image_bytes: bytes) -> np.ndarray:
-    """Целосен (потежок) pipeline со бинаризација - користен само од
-    Tesseract fallback патеката."""
+
     processed = preprocess_for_easyocr(image_bytes)
     binary = cv2.adaptiveThreshold(
         processed, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, blockSize=31, C=15
@@ -253,10 +187,7 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
 
 
 def _assemble_text(results: list, multiline: bool) -> str:
-    """EasyOCR враќа листа од (bbox, text, confidence) - по едно за секој
-    детектиран "збор"/регион, без гарантиран редослед. Ги подредуваме
-    лево-кон-десно (и одозгора-надолу за multiline) за да добиеме
-    смислен единствен стринг наместо разбркани парчиња."""
+
     if not results:
         return ""
 
@@ -290,11 +221,7 @@ def _assemble_text(results: list, multiline: bool) -> str:
 
 
 def extract_text(image_bytes: bytes, multiline: bool = False) -> str:
-    """
-    Главна функција: слика (bytes) -> суров текст, преку EasyOCR.
-    Паѓа назад на Tesseract ако EasyOCR не е инсталиран/не успее да се
-    вчита моделот (пр. отсутни тежини на дискот).
-    """
+
     processed = preprocess_for_easyocr(image_bytes)
     try:
         reader = get_reader()
@@ -309,17 +236,7 @@ def extract_text(image_bytes: bytes, multiline: bool = False) -> str:
 
 
 def recognize_handwriting_accurate(image_bytes: bytes) -> str | None:
-    """
-    "Точна" ракописна препознавање преку специјализираниот
-    TrOCR_Math_handwritten модел (посебен сервис, види
-    backend/handwriting_service/server.py). Побавно (~3-6s на CPU) од
-    EasyOCR, но значително попрецизно на ракопис - затоа НЕ се користи
-    за секој live-preview frame, туку само за финалното "снимање"
-    (рачно копче или кога live скенирањето се стабилизира).
 
-    Враќа LaTeX стринг, или None ако сервисот не работи/е недостапен
-    (повикувачот тогаш треба да падне назад на extract_text()).
-    """
     image_bytes = crop_to_ink_content(image_bytes)
 
     if HANDWRITING_MODE == "inprocess":
@@ -359,8 +276,7 @@ def recognize_handwriting_accurate(image_bytes: bytes) -> str | None:
 
 
 def extract_text_tesseract(image_bytes: bytes, multiline: bool = False) -> str:
-    """Fallback OCR преку Tesseract (побрз, но послаб на ракопис/фотографии
-    од камера отколку EasyOCR)."""
+
     processed = preprocess_image(image_bytes)
     config = TESSERACT_CONFIG_BLOCK if multiline else TESSERACT_CONFIG_SINGLE_LINE
     raw_text = pytesseract.image_to_string(processed, config=config)
@@ -368,8 +284,7 @@ def extract_text_tesseract(image_bytes: bytes, multiline: bool = False) -> str:
 
 
 def extract_text_with_debug(image_bytes: bytes, multiline: bool = False):
-    """Иста работа како extract_text, но враќа и ја преработената слика
-    (како PNG bytes) за debugging/приказ во UI."""
+
     text = extract_text(image_bytes, multiline)
     processed = preprocess_for_easyocr(image_bytes)
     ok, buf = cv2.imencode(".png", processed)
