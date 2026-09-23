@@ -1,7 +1,3 @@
-"""
-Основни тестови за parser + solver pipeline-от.
-Стартување (од backend/ папката): python -m pytest tests/ -v
-"""
 import sys
 from pathlib import Path
 
@@ -40,7 +36,7 @@ def test_quadratic_no_real_roots():
     parsed = parse("x^2+x+1=0")
     result = solve(parsed)
     assert result["problem_type"] == "quadratic"
-    # нема факторизација над рационални броеви за овој случај
+
     assert len(result["methods"]) == 1
     assert "комплексни" in result["methods"][0].result_text
 
@@ -74,19 +70,13 @@ def test_latex_to_plain_basic_constructs():
 
 
 def test_latex_to_plain_strips_spurious_matrix_wrapper():
-    # Реален случај забележан од handwriting сервисот - моделот понекогаш
-    # "гледа" вишок ред (пр. линија од хартијата) и го враќа изразот
-    # завиткан во \begin{matrix}...\end{matrix} со празен втор ред.
+
     assert latex_to_plain(r"\begin{matrix}1+1\\ \end{matrix}") == "1+1"
     assert latex_to_plain(r"\begin{matrix}2x+3=11\\ \end{matrix}") == "2x+3=11"
 
 
 def test_latex_matrix_hallucination_of_minus_reconstructed():
-    # Повторлив реален образец (3+ случаи) - моделот го "гледа" минус
-    # знакот како колонски разделувач (&) и враќа "4-3" / "10-4" како
-    # матрица наместо равенка со минус. Апликацијава НИКОГАШ не поддржува
-    # матрици, па секој ваков излез е сигурна халуцинација - безбедно е
-    # автоматски да се реконструира минусот наместо рачна поправка.
+
     assert latex_to_plain(r"\begin{matrix}4&3\\ 4&3\end{matrix}") == "4-3"
     assert latex_to_plain(r"\begin{matrix}10&-4\\ 4\end{matrix}") == "10-4"
 
@@ -96,11 +86,7 @@ def test_latex_matrix_hallucination_of_minus_reconstructed():
 
 
 def test_latex_fraction_hallucination_of_simple_arithmetic_resolved():
-    # Најчестиот повторлив образец во сесијава (5+ реални случаи) - моделот
-    # "дуплира" еден операнд како лажен именител/броител: "5+5" ->
-    # \frac{5+5}{5}, "1+1" -> \frac{1}{1+1}, "10+4" -> \frac{10+4}{4},
-    # "1+2" -> \frac{1+2}{2}. Секогаш едната страна е гол број што веќе
-    # се јавува како операнд во другата (со оператор) страна.
+
     cases = {
         r"\frac{5+5}{5}": "10",
         r"\frac{1}{1+1}": "2",
@@ -113,8 +99,7 @@ def test_latex_fraction_hallucination_of_simple_arithmetic_resolved():
 
 
 def test_legitimate_fractions_not_treated_as_hallucination():
-    # Не смееме да ги "поправиме" вистинските дропки - особено оние со
-    # променливи (алгебра) или каде НИТУ една страна не е гол број.
+
     assert latex_to_plain(r"\frac{1}{2}") == "(1)/(2)"
     assert latex_to_plain(r"\frac{x+2}{2}") == "(x+2)/(2)"
     assert latex_to_plain(r"\frac{2+3}{4+5}") == "(2+3)/(4+5)"
@@ -124,10 +109,7 @@ def test_legitimate_fractions_not_treated_as_hallucination():
 
 
 def test_invalid_characters_raise_parse_error_not_silent_wrong_answer():
-    # Реален случај - handwriting моделот целосно погрешно "прочитал"
-    # "4-3" како 2x2 матрица '4&3 / 4&3'. Без валидацијата, "4&3" тивко
-    # би се парсирало како Python bitwise-AND (4&3=0) и би дало лажно
-    # веродостоен, но целосно погрешен резултат "0" наместо грешка.
+
     for bad_input in ["4&3", "3~3", "4#3", "x|y"]:
         try:
             parse(bad_input)
@@ -137,8 +119,7 @@ def test_invalid_characters_raise_parse_error_not_silent_wrong_answer():
 
 
 def test_strips_trailing_ellipsis_artifact():
-    # Реален случај - handwriting моделот врати "6+6..." (trailing точки,
-    # генеративен артефакт) наместо чисто "6+6".
+
     parsed = parse("6+6...")
     assert parsed.normalized_text == "6+6"
     result = solve(parsed)
@@ -198,7 +179,7 @@ def test_basic_trig_equation():
     parsed = parse("sin(x)=0.5")
     result = solve(parsed)
     assert result["problem_type"] == "trigonometric"
-    assert "2" in result["methods"][0].result_text  # 2*pi*n период
+    assert "2" in result["methods"][0].result_text
 
 
 def test_cubic_factoring():
@@ -211,8 +192,7 @@ def test_cubic_factoring():
 
 
 def test_cubic_general_fallback():
-    # Не се факторизира убаво над рационални броеви - паѓа на општо
-    # решение, сепак мора да врати нешто (не грешка/crash)
+
     parsed = parse("x^3+x+1=0")
     result = solve(parsed)
     assert result["problem_type"] == "higher_degree"
@@ -220,9 +200,7 @@ def test_cubic_general_fallback():
 
 
 def test_trig_without_parens_defaults_to_degrees():
-    # Реален случај - "sin30" (без загради) погрешно се делеше на s*i*n*30
-    # (implicit multiplication). Сега автоматски добива загради И се
-    # третира како степени (школски стандард), не радијани.
+
     for text, expected in [("sin30", "1/2"), ("cos60", "1/2"), ("tan45", "1")]:
         parsed = parse(text)
         result = solve(parsed)
@@ -236,8 +214,7 @@ def test_trig_with_pi_stays_radians():
 
 
 def test_trig_symbolic_argument_stays_radians_for_calculus():
-    # sin(x) во извод МОРА да остане во радијани - inaku cos(x) правилото
-    # за извод не важи
+
     parsed = parse("diff(sin(x),x)")
     result = solve(parsed)
     assert result["methods"][0].result_text == "cos(x)"

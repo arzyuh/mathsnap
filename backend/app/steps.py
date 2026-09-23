@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -26,7 +25,6 @@ class Method:
 
 def _lx(expr) -> str:
     return latex(expr)
-
 
 
 def solve_linear_equation(eq: Eq, var: Symbol) -> Method:
@@ -193,7 +191,6 @@ def solve_polynomial_general_roots(eq: Eq, var: Symbol, degree: int) -> Method:
     return method
 
 
-
 def simplify_expression_steps(expr) -> Method:
     method = Method(name="Симплификација")
     method.add("Почетен израз", expr)
@@ -261,12 +258,11 @@ def differentiate_steps(expr, var: Symbol) -> Method:
         rule_name, term_deriv = _differentiate_term(term, var)
         method.add(rule_name, Eq(sympy.Derivative(term, var, evaluate=False), term_deriv))
 
-    result = sympy.diff(expr, var)  # secutiy net - секогаш точен вкупен резултат
+    result = sympy.diff(expr, var)
     method.add("Собери ги сите изведени членови", result)
     method.result_text = str(result)
     method.result_latex = _lx(result)
     return method
-
 
 
 _KNOWN_INTEGRALS = {
@@ -315,13 +311,12 @@ def integrate_steps(expr, var: Symbol) -> Method:
         rule_name, term_int = _integrate_term(term, var)
         method.add(rule_name, Eq(sympy.Integral(term, var), term_int))
 
-    result = sympy.integrate(expr, var)  # security net - секогаш точен резултат
+    result = sympy.integrate(expr, var)
     final = result + Symbol("C")
     method.add("Собери ги сите членови (+ константа на интеграција C)", final)
     method.result_text = str(final)
     method.result_latex = _lx(final)
     return method
-
 
 
 def solve_linear_system_2x2(eq1: Eq, eq2: Eq, var1: Symbol, var2: Symbol) -> Method:
@@ -358,7 +353,6 @@ def solve_linear_system_2x2(eq1: Eq, eq2: Eq, var1: Symbol, var2: Symbol) -> Met
     return method
 
 
-
 def solve_basic_trig_equation(eq: Eq, var: Symbol) -> Method | None:
 
     moved = expand(eq.lhs - eq.rhs)
@@ -370,7 +364,7 @@ def solve_basic_trig_equation(eq: Eq, var: Symbol) -> Method | None:
     if trig_term.args[0] != var:
         return None
 
-    rest = simplify(moved - trig_term)  
+    rest = simplify(moved - trig_term)
     rhs_value = simplify(-rest)
 
     method = Method(name="Тригонометриска равенка")
@@ -398,7 +392,7 @@ def solve_basic_trig_equation(eq: Eq, var: Symbol) -> Method | None:
         method.add("Примени arccos на двете страни", Eq(var, base))
         general = Eq(var, sympy.Or(base, -base) + 2 * sympy.pi * n)
         method.result_text = f"x = ±{base} + 2πn,  n ∈ ℤ"
-    else:  # tan
+    else:
         base = sympy.atan(rhs_value)
         method.add("Примени arctan на двете страни", Eq(var, base))
         general = Eq(var, base + sympy.pi * n)

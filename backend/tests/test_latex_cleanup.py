@@ -1,5 +1,3 @@
-"""Регресиони тестови за чистење на LaTeX излезот од handwriting моделот.
-Секој случај е реален, забележан при тестирање со камера/слика."""
 import pytest
 
 from app.expression_parser import ParseError, normalize_text, parse_latex
@@ -8,13 +6,13 @@ from app.expression_parser import ParseError, normalize_text, parse_latex
 @pytest.mark.parametrize(
     "latex, expected",
     [
-        (r"\frac{5+5}{5}", "(5+5)"),  # лажна дропка (дуплиран операнд)
-        (r"\begin{matrix}10&-4\end{matrix}", "10-4"),  # лажна матрица
-        (r"\overline{x+y=7;x-y=1}", "x+y=7;x-y=1"),  # wrapper команда
+        (r"\frac{5+5}{5}", "(5+5)"),
+        (r"\begin{matrix}10&-4\end{matrix}", "10-4"),
+        (r"\overline{x+y=7;x-y=1}", "x+y=7;x-y=1"),
         (r"\mathbb{x^3-6x^2+11x-6=0}", "x^3-6x^2+11x-6=0"),
-        (r"\cdot\cdot diff(x^{\wedge}2,x)", "diff(x^2,x)"),  # ^ прочитано како \wedge
-        (r"x^{1}3-6x^{1}2+11x-6=0", "x^3-6x^2+11x-6=0"),  # ^ прочитано како ^{1}
-        (r"3x\_{-7}=8", "3x=8"),  # escaped underscore
+        (r"\cdot\cdot diff(x^{\wedge}2,x)", "diff(x^2,x)"),
+        (r"x^{1}3-6x^{1}2+11x-6=0", "x^3-6x^2+11x-6=0"),
+        (r"3x\_{-7}=8", "3x=8"),
     ],
 )
 def test_hallucination_cleanup(latex, expected):

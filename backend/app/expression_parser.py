@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import re
@@ -35,7 +34,7 @@ _DECIMAL_COMMA_RE = re.compile(r"(?<=\d),(?=\d)")
 
 
 class ParseError(ValueError):
-    """Изразот не можеше да се разбере/парсира."""
+    pass
 
 
 _ALLOWED_CHARS_RE = re.compile(r"[0-9a-zA-Z+\-*/^.,=()<>;]*")
@@ -48,7 +47,7 @@ _INTEGRATE_CALL_RE = re.compile(r"^integrate\((.+),([a-zA-Z]\w*)\)$")
 _FRAC_RE = re.compile(r"\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
 _SQRT_RE = re.compile(r"\\sqrt\s*\{([^{}]*)\}")
 _BRACED_POWER_RE = re.compile(r"\^\s*\{([^{}]*)\}")
-_SUBSCRIPT_RE = re.compile(r"_\s*\{?[^{}\s]*\}?")  # индекси - ги отфрламе (вон опфат)
+_SUBSCRIPT_RE = re.compile(r"_\s*\{?[^{}\s]*\}?")
 
 
 _TEXT_WRAPPER_RE = re.compile(
@@ -226,7 +225,6 @@ def normalize_text(raw: str) -> str:
     for bad, good in _SYMBOL_REPLACEMENTS.items():
         text = text.replace(bad, good)
     text = _DECIMAL_COMMA_RE.sub(".", text)
-
 
     text = "".join(text.split())
 

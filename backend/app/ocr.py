@@ -54,7 +54,7 @@ TESSERACT_CONFIG_BLOCK = (
 )
 
 _reader_lock = threading.Lock()
-_reader = None  # lazy singleton - иницијализацијата трае ~2s, прави се еднаш
+_reader = None
 
 
 def get_reader():
@@ -110,7 +110,7 @@ def crop_to_ink_content(image_bytes: bytes, padding_ratio: float = 0.25) -> byte
         if not contours:
             return image_bytes
 
-        min_area = 0.0008 * (w_img * h_img)  # отфрли контури помали од ова (шум)
+        min_area = 0.0008 * (w_img * h_img)
         big_boxes = [cv2.boundingRect(c) for c in contours if cv2.contourArea(c) >= min_area]
         if not big_boxes:
             return image_bytes

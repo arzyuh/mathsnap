@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import logging
@@ -22,7 +21,6 @@ app = FastAPI(title="MathSnap API", version="0.2.0")
 
 @app.on_event("startup")
 def _warm_up_ocr_model() -> None:
-
 
     def _load():
         try:

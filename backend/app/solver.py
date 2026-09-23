@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import sympy
@@ -105,7 +104,6 @@ def solve(parsed: ParsedProblem) -> dict:
 
     if parsed.kind == "system":
         return _solve_system(parsed)
-
 
     if len(parsed.variables) != 1:
 

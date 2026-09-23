@@ -1,7 +1,4 @@
 @echo off
-REM MathSnap - стартува ги двата сервиси со еден клик.
-REM Секој сервис се отвора во свој прозорец - едноставно затвори го
-REM прозорецот кога сакаш да го изгаснеш тој сервис.
 
 echo Стартувам главен backend (порт 8000)...
 start "MathSnap - главен backend" cmd /k "cd /d "%~dp0backend" && "C:\Users\Computer\AppData\Local\Programs\Python\Python310\python.exe" -m uvicorn app.main:app --port 8000"

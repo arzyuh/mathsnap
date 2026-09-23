@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import io
@@ -37,13 +36,12 @@ def _fig_to_png(fig) -> bytes:
 
 
 def render_single_expression(expr, var: Symbol) -> bytes:
-    """График на y = expr(x)."""
     f = _lambdify_safe(expr, var)
     xs = np.linspace(*_X_RANGE, _SAMPLES)
     with np.errstate(all="ignore"):
         ys = f(xs)
     ys = np.asarray(ys, dtype=float)
-    ys = np.where(np.abs(ys) > 1e4, np.nan, ys)  # исфрли асимптоти/поли
+    ys = np.where(np.abs(ys) > 1e4, np.nan, ys)
 
     fig, ax = _new_figure()
     ax.plot(xs, ys, color="#2563eb", linewidth=2)
